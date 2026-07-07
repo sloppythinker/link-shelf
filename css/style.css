@@ -674,6 +674,17 @@ body {
 
 /* ---------- Mobile ---------- */
 @media (max-width: 800px) {
+  /* 16px未満の入力欄はフォーカス時にスマホが自動ズームするため */
+  #searchInput,
+  .field input[type="url"],
+  .field input[type="text"],
+  .field select,
+  .field textarea,
+  .chip-input input,
+  .popover-input input {
+    font-size: 16px;
+  }
+
   .icon-btn.menu-btn { display: block; }
 
   .header { gap: 10px; padding: 10px 12px; }
