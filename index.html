@@ -33,6 +33,9 @@
       <span>リンク追加</span>
     </button>
     <button class="btn ghost" id="editModeBtn">編集</button>
+    <button class="icon-btn theme-btn" id="themeBtn" aria-label="テーマ切替" title="テーマ切替">
+      <svg viewBox="0 0 24 24" width="20" height="20"><path d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zm0 2v14a7 7 0 0 1 0-14z" fill="currentColor"/></svg>
+    </button>
   </header>
 
   <div class="layout">
@@ -50,7 +53,8 @@
       <div class="side-footer">
         <button class="side-tool" id="exportBtn">エクスポート</button>
         <button class="side-tool" id="importBtn">インポート</button>
-        <input type="file" id="importFile" accept="application/json,.json" hidden>
+        <button class="side-tool" id="syncBtn">同期</button>
+        <input type="file" id="importFile" accept="application/json,.json,text/html,.html,.htm" hidden>
       </div>
     </aside>
 
@@ -59,6 +63,11 @@
         <h1 class="current-view" id="currentView">すべてのリンク</h1>
         <span class="count-badge" id="countBadge">0件</span>
         <div class="active-tags" id="activeTags"></div>
+        <select id="sortSelect" class="sort-select" aria-label="並び替え">
+          <option value="new">新しい順</option>
+          <option value="old">古い順</option>
+          <option value="title">タイトル順</option>
+        </select>
       </div>
       <div class="card-grid" id="cardGrid"></div>
       <div class="empty-state" id="emptyState" hidden>
@@ -130,7 +139,39 @@
     </div>
   </div>
 
+  <!-- 同期設定モーダル -->
+  <div class="modal-backdrop" id="syncModal" hidden>
+    <div class="modal" role="dialog" aria-modal="true">
+      <h2 class="modal-title">同期（GitHub Gist）</h2>
+      <p class="sync-note">非公開Gistをデータ置き場にして、PC⇔スマホでデータを受け渡せます。<a href="https://github.com/settings/tokens/new?scopes=gist&description=LinkShelf" target="_blank" rel="noopener noreferrer">gist権限のトークンを作成</a>して貼り付けてください。トークンはこの端末のブラウザ内にのみ保存されます。</p>
+      <label class="field">
+        <span class="field-label">アクセストークン</span>
+        <input type="password" id="syncToken" placeholder="ghp_..." autocomplete="off">
+      </label>
+      <label class="field">
+        <span class="field-label">Gist ID（初回アップロードで自動発行。他の端末にはこのIDとトークンを入力）</span>
+        <input type="text" id="syncGistId" placeholder="（未設定）" autocomplete="off">
+      </label>
+      <p class="sync-status" id="syncStatus"></p>
+      <div class="modal-actions">
+        <button type="button" class="btn ghost" id="syncCancelBtn">閉じる</button>
+        <button type="button" class="btn ghost" id="syncDownloadBtn">ダウンロード</button>
+        <button type="button" class="btn primary" id="syncUploadBtn">アップロード</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 一括操作バー（編集モードで選択中に表示） -->
+  <div class="bulk-bar" id="bulkBar" hidden>
+    <span class="bulk-count" id="bulkCount">0件選択</span>
+    <button class="btn ghost" id="bulkMoveBtn">フォルダへ移動</button>
+    <button class="btn ghost" id="bulkTagBtn">タグ追加</button>
+    <button class="btn danger" id="bulkDeleteBtn">削除</button>
+    <button class="btn ghost" id="bulkClearBtn">解除</button>
+  </div>
+
   <div class="popover" id="folderPicker" hidden></div>
+  <div class="popover" id="bulkTagPopover" hidden></div>
 
   <div class="toast" id="toast" hidden></div>
 

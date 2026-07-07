@@ -34,9 +34,11 @@ const LinkShelfStore = (() => {
             : [],
           folderId: folderIds.has(l.folderId) ? l.folderId : null,
           note: typeof l.note === "string" ? l.note : "",
+          pinned: !!l.pinned,
           createdAt: typeof l.createdAt === "number" ? l.createdAt : Date.now(),
         }));
     }
+    if (typeof raw.updatedAt === "number") data.updatedAt = raw.updatedAt;
     return data;
   }
 
@@ -49,6 +51,7 @@ const LinkShelfStore = (() => {
     }
 
     function save() {
+      data.updatedAt = Date.now();
       storage.setItem(STORAGE_KEY, JSON.stringify(data));
     }
 
@@ -144,6 +147,43 @@ const LinkShelfStore = (() => {
           counts.set(key, (counts.get(key) || 0) + 1);
         });
         return counts;
+      },
+
+      // items: [{ url, title, folderName }] フォルダは名前で自動作成、URL重複はスキップ
+      bulkAdd(items) {
+        let added = 0;
+        let skipped = 0;
+        const urls = new Set(data.links.map((l) => l.url));
+        for (const it of items) {
+          const url = typeof it.url === "string" ? it.url.trim() : "";
+          if (!url || urls.has(url)) {
+            skipped++;
+            continue;
+          }
+          let folderId = null;
+          if (it.folderName) {
+            let f = data.folders.find((x) => x.name === it.folderName);
+            if (!f) {
+              f = { id: uid(), name: it.folderName, order: data.folders.length };
+              data.folders.push(f);
+            }
+            folderId = f.id;
+          }
+          data.links.push({
+            id: uid(),
+            url,
+            title: (it.title || "").trim() || url,
+            tags: [],
+            folderId,
+            note: "",
+            pinned: false,
+            createdAt: Date.now(),
+          });
+          urls.add(url);
+          added++;
+        }
+        save();
+        return { added, skipped };
       },
 
       exportJSON() {

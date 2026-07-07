@@ -7,9 +7,30 @@
   --text: #37352f;
   --text-sub: #8a887f;
   --border: #e6e4de;
+  --hover: #eae9e5;
+  --badge: #eeede9;
   --danger: #d6455b;
+  --danger-soft: #fdf0f2;
+  --edit-border: #c7c7ee;
   --shadow: 0 1px 3px rgba(20, 20, 40, 0.08), 0 4px 14px rgba(20, 20, 40, 0.05);
   --radius: 12px;
+}
+
+[data-theme="dark"] {
+  --accent: #7c7cf0;
+  --accent-soft: #2c2c4e;
+  --bg: #17171f;
+  --side-bg: #1d1d28;
+  --card-bg: #232331;
+  --text: #e8e8f0;
+  --text-sub: #9a9aab;
+  --border: #33333f;
+  --hover: #2a2a38;
+  --badge: #2a2a38;
+  --danger: #f0718a;
+  --danger-soft: #3a222a;
+  --edit-border: #4a4a78;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.4), 0 4px 14px rgba(0, 0, 0, 0.3);
 }
 
 * { box-sizing: border-box; }
@@ -36,7 +57,7 @@ body {
   align-items: center;
   gap: 14px;
   padding: 10px 18px;
-  background: #fff;
+  background: var(--card-bg);
   border-bottom: 1px solid var(--border);
   position: sticky;
   top: 0;
@@ -83,7 +104,7 @@ body {
 #searchInput:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
-  background: #fff;
+  background: var(--card-bg);
 }
 
 .btn {
@@ -121,7 +142,7 @@ body {
   border: 1px solid var(--danger);
 }
 
-.btn.danger:hover { background: #fdf0f2; }
+.btn.danger:hover { background: var(--danger-soft); }
 
 .modal-actions .spacer { flex: 1; }
 
@@ -138,6 +159,22 @@ body {
 }
 
 .icon-btn:hover { background: var(--bg); }
+
+.icon-btn.theme-btn { display: block; color: var(--text-sub); }
+.icon-btn.theme-btn:hover { color: var(--text); }
+
+.sort-select {
+  margin-left: auto;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card-bg);
+  color: var(--text-sub);
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+  cursor: pointer;
+}
 
 /* ---------- Layout ---------- */
 .layout {
@@ -184,7 +221,7 @@ body {
   user-select: none;
 }
 
-.folder-item:hover { background: #eae9e5; }
+.folder-item:hover { background: var(--hover); }
 .folder-item.active {
   background: var(--accent-soft);
   color: var(--accent);
@@ -217,7 +254,7 @@ body {
 }
 
 .folder-item:hover .f-menu { display: block; }
-.folder-item .f-menu:hover { background: #ddd; color: var(--text); }
+.folder-item .f-menu:hover { background: var(--hover); color: var(--text); }
 
 .side-add {
   background: none;
@@ -232,7 +269,7 @@ body {
   font-family: inherit;
 }
 
-.side-add:hover { background: #eae9e5; color: var(--text); }
+.side-add:hover { background: var(--hover); color: var(--text); }
 
 .tag-cloud {
   display: flex;
@@ -274,7 +311,7 @@ body {
 
 .side-tool {
   flex: 1;
-  background: #fff;
+  background: var(--card-bg);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 7px 0;
@@ -284,7 +321,7 @@ body {
   font-family: inherit;
 }
 
-.side-tool:hover { color: var(--text); border-color: #ccc; }
+.side-tool:hover { color: var(--text); border-color: var(--text-sub); }
 
 .sidebar-backdrop { display: none; }
 
@@ -312,7 +349,7 @@ body {
 .count-badge {
   font-size: 12px;
   color: var(--text-sub);
-  background: #eeede9;
+  background: var(--badge);
   border-radius: 10px;
   padding: 2px 10px;
 }
@@ -442,7 +479,7 @@ body {
 /* 編集モード */
 .edit-mode .card-actions { display: flex; }
 .edit-mode .card-head { padding-right: 92px; }
-.edit-mode .card { border-color: #c7c7ee; }
+.edit-mode .card { border-color: var(--edit-border); }
 
 #editModeBtn.active {
   background: var(--accent-soft);
@@ -451,7 +488,7 @@ body {
 }
 
 .card-actions button {
-  background: #fff;
+  background: var(--card-bg);
   border: 1px solid var(--border);
   border-radius: 6px;
   width: 26px;
@@ -464,7 +501,7 @@ body {
   padding: 0;
 }
 
-.card-actions button:hover { color: var(--text); border-color: #ccc; }
+.card-actions button:hover { color: var(--text); border-color: var(--text-sub); }
 .card-actions button.del:hover { color: var(--danger); border-color: var(--danger); }
 
 /* ---------- Empty state ---------- */
@@ -500,7 +537,7 @@ body {
 }
 
 .modal {
-  background: #fff;
+  background: var(--card-bg);
   border-radius: 14px;
   padding: 22px 24px;
   width: 100%;
@@ -548,7 +585,7 @@ body {
   font-size: 13px;
   font-family: inherit;
   outline: none;
-  background: #fff;
+  background: var(--card-bg);
   color: var(--text);
 }
 
@@ -612,11 +649,103 @@ body {
   margin-top: 20px;
 }
 
+/* ---------- 選択チェック・ピン ---------- */
+.select-box {
+  display: none;
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--border);
+  border-radius: 50%;
+  flex-shrink: 0;
+  align-self: center;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  color: transparent;
+  background: var(--card-bg);
+}
+
+.edit-mode .select-box { display: flex; }
+
+.select-box.checked {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.card.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+
+.pin-badge {
+  position: absolute;
+  top: -7px;
+  left: -7px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow);
+}
+
+.card-actions button.pin-on {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* ---------- 一括操作バー ---------- */
+.bulk-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 10px 14px;
+  z-index: 48;
+  box-shadow: 0 8px 30px rgba(20, 20, 40, .2);
+  max-width: calc(100vw - 20px);
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.bulk-count {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+/* ---------- 同期モーダル ---------- */
+.sync-note {
+  font-size: 12px;
+  color: var(--text-sub);
+  line-height: 1.8;
+  margin: 0 0 14px;
+}
+
+.sync-note a { color: var(--accent); }
+
+.sync-status {
+  font-size: 12px;
+  min-height: 18px;
+  margin: 0;
+  color: var(--accent);
+}
+
+.sync-status.error { color: var(--danger); }
+
 /* ---------- Popover (フォルダ移動) ---------- */
 .popover {
   position: fixed;
   z-index: 70;
-  background: #fff;
+  background: var(--card-bg);
   border: 1px solid var(--border);
   border-radius: 10px;
   box-shadow: 0 8px 30px rgba(20, 20, 40, .18);
@@ -672,7 +801,7 @@ body {
   left: 50%;
   transform: translateX(-50%);
   background: var(--text);
-  color: #fff;
+  color: var(--bg);
   padding: 10px 20px;
   border-radius: 20px;
   font-size: 13px;

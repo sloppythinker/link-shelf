@@ -1,10 +1,28 @@
 const store = LinkShelfStore.createStore(localStorage);
 
+const UI_KEY = "linkshelf-ui";
+const SYNC_KEY = "linkshelf-sync";
+
+function loadJSON(key, fallback) {
+  try {
+    return JSON.parse(localStorage.getItem(key)) || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+const uiPrefs = loadJSON(UI_KEY, {});
+
 const state = {
   folder: "all", // "all" | "none" | folderId
   tags: [],
   query: "",
+  sort: uiPrefs.sort || "new", // "new" | "old" | "title"
 };
+
+function saveUIPrefs() {
+  localStorage.setItem(UI_KEY, JSON.stringify({ sort: state.sort, theme: themeMode }));
+}
 
 const $ = (id) => document.getElementById(id);
 
@@ -19,6 +37,7 @@ const el = {
   countBadge: $("countBadge"),
   activeTags: $("activeTags"),
   searchInput: $("searchInput"),
+  sortSelect: $("sortSelect"),
   sidebar: $("sidebar"),
   sidebarBackdrop: $("sidebarBackdrop"),
   linkModal: $("linkModal"),
@@ -29,6 +48,7 @@ const el = {
   fieldFolder: $("fieldFolder"),
   fieldNewFolder: $("fieldNewFolder"),
   folderPicker: $("folderPicker"),
+  bulkTagPopover: $("bulkTagPopover"),
   fieldTagText: $("fieldTagText"),
   chipInput: $("chipInput"),
   tagSuggest: $("tagSuggest"),
@@ -37,8 +57,40 @@ const el = {
   folderModalTitle: $("folderModalTitle"),
   folderForm: $("folderForm"),
   fieldFolderName: $("fieldFolderName"),
+  bulkBar: $("bulkBar"),
+  bulkCount: $("bulkCount"),
+  syncModal: $("syncModal"),
+  syncToken: $("syncToken"),
+  syncGistId: $("syncGistId"),
+  syncStatus: $("syncStatus"),
   toast: $("toast"),
 };
+
+/* ---------- テーマ ---------- */
+
+let themeMode = uiPrefs.theme || "auto"; // "auto" | "light" | "dark"
+const darkMQ = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+
+function applyTheme() {
+  const resolved = themeMode === "auto" ? (darkMQ && darkMQ.matches ? "dark" : "light") : themeMode;
+  document.documentElement.dataset.theme = resolved;
+}
+
+if (darkMQ && darkMQ.addEventListener) {
+  darkMQ.addEventListener("change", () => {
+    if (themeMode === "auto") applyTheme();
+  });
+}
+
+$("themeBtn").addEventListener("click", () => {
+  themeMode = themeMode === "auto" ? "dark" : themeMode === "dark" ? "light" : "auto";
+  applyTheme();
+  saveUIPrefs();
+  const labels = { auto: "テーマ: 自動（OS設定に追従）", dark: "テーマ: ダーク", light: "テーマ: ライト" };
+  showToast(labels[themeMode]);
+});
+
+applyTheme();
 
 /* ---------- utils ---------- */
 
@@ -96,7 +148,7 @@ function showToast(msg) {
   el.toast.textContent = msg;
   el.toast.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => (el.toast.hidden = true), 2200);
+  toastTimer = setTimeout(() => (el.toast.hidden = true), 2600);
 }
 
 /* ---------- sidebar ---------- */
@@ -128,7 +180,7 @@ function folderItem({ id, name, icon, count, showMenu }) {
     menuBtn.title = "フォルダ操作";
     menuBtn.addEventListener("click", (e) => {
       e.stopPropagation();
-      openFolderMenu(id, name);
+      openFolderModal({ id, name });
     });
     li.appendChild(menuBtn);
   }
@@ -144,6 +196,7 @@ function folderItem({ id, name, icon, count, showMenu }) {
 const FOLDER_ICON = '<svg viewBox="0 0 24 24" width="15" height="15"><path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6z" fill="currentColor" opacity=".8"/></svg>';
 const ALL_ICON = '<svg viewBox="0 0 24 24" width="15" height="15"><rect x="3" y="3" width="8" height="8" rx="2" fill="currentColor" opacity=".8"/><rect x="13" y="3" width="8" height="8" rx="2" fill="currentColor" opacity=".5"/><rect x="3" y="13" width="8" height="8" rx="2" fill="currentColor" opacity=".5"/><rect x="13" y="13" width="8" height="8" rx="2" fill="currentColor" opacity=".8"/></svg>';
 const INBOX_ICON = '<svg viewBox="0 0 24 24" width="15" height="15"><path d="M4 4h16v10h-5a3 3 0 0 1-6 0H4V4zm0 10v6h16v-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>';
+const PIN_SVG = '<svg viewBox="0 0 24 24" width="12" height="12"><path d="M9 4h6l-1 6 3 3v2h-4v5l-1 1-1-1v-5H7v-2l3-3L9 4z" fill="currentColor"/></svg>';
 
 function renderSidebar() {
   const data = store.getData();
@@ -181,15 +234,20 @@ function renderSidebar() {
   });
 }
 
-function openFolderMenu(id, name) {
-  openFolderModal({ id, name });
-}
-
 /* ---------- cards ---------- */
+
+function sortLinks(links) {
+  const cmp = {
+    new: (a, b) => b.createdAt - a.createdAt,
+    old: (a, b) => a.createdAt - b.createdAt,
+    title: (a, b) => a.title.localeCompare(b.title, "ja"),
+  }[state.sort] || ((a, b) => b.createdAt - a.createdAt);
+  return [...links].sort((a, b) => (b.pinned - a.pinned) || cmp(a, b));
+}
 
 function renderCards() {
   const data = store.getData();
-  const links = store.filterLinks(state);
+  const links = sortLinks(store.filterLinks(state));
   el.cardGrid.textContent = "";
 
   const folderName =
@@ -198,6 +256,7 @@ function renderCards() {
     (data.folders.find((f) => f.id === state.folder) || {}).name || "すべてのリンク";
   el.currentView.textContent = folderName;
   el.countBadge.textContent = `${links.length}件`;
+  el.sortSelect.value = state.sort;
 
   el.activeTags.textContent = "";
   state.tags.forEach((tag) => {
@@ -211,6 +270,13 @@ function renderCards() {
       })
     );
   });
+
+  // 消えたリンクを選択から除去
+  const ids = new Set(data.links.map((l) => l.id));
+  selectedIds.forEach((id) => {
+    if (!ids.has(id)) selectedIds.delete(id);
+  });
+  updateBulkBar();
 
   if (!links.length) {
     el.emptyState.hidden = false;
@@ -231,10 +297,11 @@ function renderCards() {
 function makeCard(link) {
   const card = document.createElement("article");
   card.className = "card";
+  if (selectedIds.has(link.id)) card.classList.add("selected");
 
   // 白枠内のどこをタップしてもリンクを開く（タグ・ボタン・リンク文字は除く）
   card.addEventListener("click", (e) => {
-    if (e.target.closest("a, button, .tag-chip")) return;
+    if (e.target.closest("a, button, .tag-chip, .select-box")) return;
     if (editMode) {
       openLinkModal(link);
     } else {
@@ -242,8 +309,26 @@ function makeCard(link) {
     }
   });
 
+  if (link.pinned) {
+    const badge = document.createElement("span");
+    badge.className = "pin-badge";
+    badge.innerHTML = PIN_SVG;
+    badge.title = "ピン留め中";
+    card.appendChild(badge);
+  }
+
   const head = document.createElement("div");
   head.className = "card-head";
+
+  const selectBox = document.createElement("span");
+  selectBox.className = "select-box" + (selectedIds.has(link.id) ? " checked" : "");
+  selectBox.innerHTML = '<svg viewBox="0 0 24 24" width="13" height="13"><path d="m5 12 5 5 9-10" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  selectBox.title = "選択";
+  selectBox.addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleSelect(link.id, card, selectBox);
+  });
+  head.appendChild(selectBox);
 
   const fav = document.createElement("div");
   fav.className = "favicon-wrap";
@@ -309,33 +394,56 @@ function makeCard(link) {
 
   const actions = document.createElement("div");
   actions.className = "card-actions";
+
+  const pinBtn = document.createElement("button");
+  pinBtn.title = link.pinned ? "ピン留め解除" : "ピン留め";
+  pinBtn.className = link.pinned ? "pin-on" : "";
+  pinBtn.innerHTML = PIN_SVG;
+  pinBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    store.updateLink(link.id, { pinned: !link.pinned });
+    render();
+    showToast(link.pinned ? "ピン留めを解除しました" : "ピン留めしました（上部に固定）");
+  });
+  actions.appendChild(pinBtn);
+
   const moveBtn = document.createElement("button");
   moveBtn.title = "フォルダへ移動";
-  moveBtn.innerHTML = '<svg viewBox="0 0 24 24" width="13" height="13"><path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>';
+  moveBtn.innerHTML = FOLDER_ICON.replace('fill="currentColor" opacity=".8"', 'fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"');
   moveBtn.addEventListener("click", (e) => {
     e.stopPropagation();
-    openFolderPicker(link, moveBtn);
+    openFolderPicker(moveBtn, link.folderId, (folderId, label) => {
+      store.updateLink(link.id, { folderId });
+      render();
+      showToast(folderId ? `「${label}」へ移動しました` : "未分類に移動しました");
+    });
   });
   actions.appendChild(moveBtn);
+
   const editBtn = document.createElement("button");
   editBtn.title = "編集";
   editBtn.innerHTML = '<svg viewBox="0 0 24 24" width="13" height="13"><path d="M4 20h4L20 8l-4-4L4 16v4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>';
-  editBtn.addEventListener("click", () => openLinkModal(link));
+  editBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    openLinkModal(link);
+  });
+  actions.appendChild(editBtn);
+
   const delBtn = document.createElement("button");
   delBtn.className = "del";
   delBtn.title = "削除";
   delBtn.innerHTML = '<svg viewBox="0 0 24 24" width="13" height="13"><path d="M5 7h14M9 7V5h6v2m-8 0 1 13h8l1-13" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>';
-  delBtn.addEventListener("click", () => {
+  delBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
     if (window.confirm(`「${link.title}」を削除しますか？`)) {
       store.deleteLink(link.id);
       render();
       showToast("リンクを削除しました");
     }
   });
-  actions.appendChild(editBtn);
   actions.appendChild(delBtn);
-  card.appendChild(actions);
 
+  card.appendChild(actions);
   return card;
 }
 
@@ -348,9 +456,10 @@ function faviconFallback(domain) {
   return div;
 }
 
-/* ---------- 編集モード ---------- */
+/* ---------- 編集モード＋複数選択 ---------- */
 
 let editMode = false;
+const selectedIds = new Set();
 
 $("editModeBtn").addEventListener("click", () => {
   editMode = !editMode;
@@ -358,28 +467,136 @@ $("editModeBtn").addEventListener("click", () => {
   const btn = $("editModeBtn");
   btn.textContent = editMode ? "完了" : "編集";
   btn.classList.toggle("active", editMode);
-  if (editMode) showToast("編集モード: カードをタップで編集、ボタンで移動・削除");
+  if (!editMode) {
+    selectedIds.clear();
+    render();
+  } else {
+    showToast("編集モード: ○で複数選択、カードをタップで編集");
+  }
+  updateBulkBar();
 });
 
-/* ---------- folder picker (カードから後からフォルダ分け) ---------- */
+function toggleSelect(id, card, box) {
+  if (selectedIds.has(id)) {
+    selectedIds.delete(id);
+    card.classList.remove("selected");
+    box.classList.remove("checked");
+  } else {
+    selectedIds.add(id);
+    card.classList.add("selected");
+    box.classList.add("checked");
+  }
+  updateBulkBar();
+}
 
-function openFolderPicker(link, anchorBtn) {
+function updateBulkBar() {
+  const show = editMode && selectedIds.size > 0;
+  el.bulkBar.hidden = !show;
+  if (show) el.bulkCount.textContent = `${selectedIds.size}件選択`;
+}
+
+$("bulkClearBtn").addEventListener("click", () => {
+  selectedIds.clear();
+  render();
+});
+
+$("bulkMoveBtn").addEventListener("click", (e) => {
+  e.stopPropagation();
+  openFolderPicker($("bulkMoveBtn"), undefined, (folderId, label) => {
+    [...selectedIds].forEach((id) => store.updateLink(id, { folderId }));
+    const n = selectedIds.size;
+    selectedIds.clear();
+    render();
+    showToast(`${n}件を${folderId ? `「${label}」` : "未分類"}へ移動しました`);
+  });
+});
+
+$("bulkDeleteBtn").addEventListener("click", () => {
+  const n = selectedIds.size;
+  if (!window.confirm(`選択中の${n}件のリンクを削除しますか？`)) return;
+  [...selectedIds].forEach((id) => store.deleteLink(id));
+  selectedIds.clear();
+  render();
+  showToast(`${n}件削除しました`);
+});
+
+$("bulkTagBtn").addEventListener("click", (e) => {
+  e.stopPropagation();
+  const p = el.bulkTagPopover;
+  p.textContent = "";
+  const wrap = document.createElement("div");
+  wrap.className = "popover-input";
+  const input = document.createElement("input");
+  input.type = "text";
+  input.placeholder = "追加するタグ（カンマ区切り可）";
+  input.addEventListener("keydown", (ev) => {
+    ev.stopPropagation();
+    if (ev.key === "Enter") {
+      ev.preventDefault();
+      const tags = input.value.split(",").map((t) => t.trim()).filter(Boolean);
+      if (!tags.length) return;
+      [...selectedIds].forEach((id) => {
+        const link = store.getData().links.find((l) => l.id === id);
+        if (link) store.updateLink(id, { tags: [...new Set([...link.tags, ...tags])] });
+      });
+      const n = selectedIds.size;
+      p.hidden = true;
+      render();
+      showToast(`${n}件に「${tags.join("・")}」を追加しました`);
+    } else if (ev.key === "Escape") {
+      p.hidden = true;
+    }
+  });
+  wrap.appendChild(input);
+  p.appendChild(wrap);
+  // 既存タグのサジェスト
+  store.tagCounts().slice(0, 8).forEach(({ tag }) => {
+    p.appendChild(
+      makeTagChip(tag, {
+        onClick: () => {
+          input.value = input.value ? `${input.value.replace(/,\s*$/, "")}, ${tag}` : tag;
+          input.focus();
+        },
+      })
+    );
+  });
+  positionPopover(p, $("bulkTagBtn"));
+  input.focus();
+});
+
+document.addEventListener("click", (e) => {
+  if (!el.bulkTagPopover.hidden && !el.bulkTagPopover.contains(e.target) && e.target !== $("bulkTagBtn")) {
+    el.bulkTagPopover.hidden = true;
+  }
+});
+
+/* ---------- folder picker ---------- */
+
+function positionPopover(p, anchor) {
+  p.hidden = false;
+  const r = anchor.getBoundingClientRect();
+  const left = Math.max(8, Math.min(r.left, window.innerWidth - p.offsetWidth - 8));
+  let top = r.bottom + 6;
+  if (top + p.offsetHeight > window.innerHeight - 8) top = Math.max(8, r.top - p.offsetHeight - 6);
+  p.style.left = `${left}px`;
+  p.style.top = `${top}px`;
+}
+
+function openFolderPicker(anchor, currentFolderId, onSelect) {
   const p = el.folderPicker;
   p.textContent = "";
 
-  const moveTo = (folderId, label) => {
-    store.updateLink(link.id, { folderId });
+  const choose = (folderId, label) => {
     closeFolderPicker();
-    render();
-    showToast(folderId ? `「${label}」へ移動しました` : "未分類に移動しました");
+    onSelect(folderId, label);
   };
 
   const addItem = (label, folderId) => {
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.className = "popover-item" + (link.folderId === folderId ? " current" : "");
+    btn.className = "popover-item" + (currentFolderId !== undefined && currentFolderId === folderId ? " current" : "");
     btn.textContent = label;
-    btn.addEventListener("click", () => moveTo(folderId, label));
+    btn.addEventListener("click", () => choose(folderId, label));
     p.appendChild(btn);
   };
 
@@ -404,7 +621,7 @@ function openFolderPicker(link, anchorBtn) {
         const name = input.value.trim();
         if (!name) return;
         const folder = store.addFolder(name) || store.getData().folders.find((f) => f.name === name);
-        moveTo(folder.id, folder.name);
+        choose(folder.id, folder.name);
       } else if (ev.key === "Escape") {
         closeFolderPicker();
       }
@@ -415,13 +632,7 @@ function openFolderPicker(link, anchorBtn) {
   });
   p.appendChild(newBtn);
 
-  p.hidden = false;
-  const r = anchorBtn.getBoundingClientRect();
-  const left = Math.max(8, Math.min(r.left, window.innerWidth - p.offsetWidth - 8));
-  let top = r.bottom + 6;
-  if (top + p.offsetHeight > window.innerHeight - 8) top = Math.max(8, r.top - p.offsetHeight - 6);
-  p.style.left = `${left}px`;
-  p.style.top = `${top}px`;
+  positionPopover(p, anchor);
 }
 
 function closeFolderPicker() {
@@ -437,12 +648,12 @@ document.addEventListener("click", (e) => {
 let editingId = null;
 let editTags = [];
 
-function openLinkModal(link) {
+function openLinkModal(link, prefill) {
   editingId = link ? link.id : null;
   editTags = link ? [...link.tags] : [];
   el.linkModalTitle.textContent = link ? "リンクを編集" : "リンクを追加";
-  el.fieldUrl.value = link ? link.url : "";
-  el.fieldTitle.value = link ? (link.title === link.url ? "" : link.title) : "";
+  el.fieldUrl.value = link ? link.url : (prefill && prefill.url) || "";
+  el.fieldTitle.value = link ? (link.title === link.url ? "" : link.title) : (prefill && prefill.title) || "";
   el.fieldNote.value = link ? link.note : "";
 
   el.fieldFolder.textContent = "";
@@ -583,6 +794,10 @@ function openFolderModal(folder) {
   el.fieldFolderName.focus();
 }
 
+function closeFolderModal() {
+  el.folderModal.hidden = true;
+}
+
 $("folderDeleteBtn").addEventListener("click", () => {
   if (!editingFolderId) return;
   const folder = store.getData().folders.find((f) => f.id === editingFolderId);
@@ -595,10 +810,6 @@ $("folderDeleteBtn").addEventListener("click", () => {
     showToast("フォルダを削除しました");
   }
 });
-
-function closeFolderModal() {
-  el.folderModal.hidden = true;
-}
 
 el.folderForm.addEventListener("submit", (e) => {
   e.preventDefault();
@@ -625,14 +836,22 @@ document.addEventListener("keydown", (e) => {
     closeLinkModal();
     closeFolderModal();
     closeFolderPicker();
+    closeSyncModal();
+    el.bulkTagPopover.hidden = true;
     closeSidebar();
   }
 });
 
-/* ---------- search ---------- */
+/* ---------- search / sort ---------- */
 
 el.searchInput.addEventListener("input", () => {
   state.query = el.searchInput.value;
+  render();
+});
+
+el.sortSelect.addEventListener("change", () => {
+  state.sort = el.sortSelect.value;
+  saveUIPrefs();
   render();
 });
 
@@ -651,6 +870,40 @@ $("exportBtn").addEventListener("click", () => {
 
 $("importBtn").addEventListener("click", () => $("importFile").click());
 
+// ブックマークHTML（Netscape形式）の解析
+const BOOKMARK_ROOT_NAMES = [
+  "ブックマーク バー", "ブックマークバー", "Bookmarks bar", "Bookmarks Bar", "Bookmarks Toolbar",
+  "その他のブックマーク", "Other bookmarks", "Other Bookmarks",
+  "モバイルのブックマーク", "Mobile bookmarks", "Mobile Bookmarks",
+];
+
+function bookmarkFolderOf(a) {
+  const dl = a.closest("dl");
+  if (!dl) return null;
+  const dt = dl.parentElement;
+  if (dt && dt.tagName === "DT") {
+    const h3 = dt.querySelector(":scope > h3");
+    if (h3) return h3.textContent.trim();
+  }
+  let prev = dl.previousElementSibling;
+  if (prev && prev.tagName === "P") prev = prev.previousElementSibling;
+  if (prev && prev.tagName === "H3") return prev.textContent.trim();
+  return null;
+}
+
+function parseBookmarksHtml(html) {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const items = [];
+  doc.querySelectorAll("a[href]").forEach((a) => {
+    const url = a.getAttribute("href");
+    if (!/^https?:/i.test(url)) return;
+    let folderName = bookmarkFolderOf(a);
+    if (folderName && BOOKMARK_ROOT_NAMES.includes(folderName)) folderName = null;
+    items.push({ url, title: (a.textContent || "").trim(), folderName });
+  });
+  return items;
+}
+
 $("importFile").addEventListener("change", async (e) => {
   const file = e.target.files[0];
   e.target.value = "";
@@ -658,6 +911,27 @@ $("importFile").addEventListener("change", async (e) => {
   let text;
   try {
     text = await file.text();
+  } catch {
+    showToast("ファイルを読み込めませんでした");
+    return;
+  }
+
+  const isHtml = /\.html?$/i.test(file.name) || /^\s*</.test(text);
+  if (isHtml) {
+    const items = parseBookmarksHtml(text);
+    if (!items.length) {
+      showToast("ブックマークが見つかりませんでした");
+      return;
+    }
+    if (!window.confirm(`ブックマーク${items.length}件をインポートします。\nフォルダ構造も引き継ぎ、登録済みのURLはスキップされます。`)) return;
+    const { added, skipped } = store.bulkAdd(items);
+    state.folder = "all";
+    render();
+    showToast(`${added}件追加しました${skipped ? `（重複${skipped}件をスキップ）` : ""}`);
+    return;
+  }
+
+  try {
     JSON.parse(text);
   } catch {
     showToast("JSONファイルを読み込めませんでした");
@@ -678,6 +952,115 @@ $("importFile").addEventListener("change", async (e) => {
   }
 });
 
+/* ---------- Gist同期 ---------- */
+
+const GIST_FILE = "linkshelf-data.json";
+
+function syncConfig() {
+  return loadJSON(SYNC_KEY, {});
+}
+
+function saveSyncConfig(cfg) {
+  localStorage.setItem(SYNC_KEY, JSON.stringify(cfg));
+}
+
+function openSyncModal() {
+  const cfg = syncConfig();
+  el.syncToken.value = cfg.token || "";
+  el.syncGistId.value = cfg.gistId || "";
+  setSyncStatus("");
+  el.syncModal.hidden = false;
+}
+
+function closeSyncModal() {
+  el.syncModal.hidden = true;
+}
+
+function setSyncStatus(msg, isError) {
+  el.syncStatus.textContent = msg;
+  el.syncStatus.classList.toggle("error", !!isError);
+}
+
+async function gistRequest(method, path, token, body) {
+  const res = await fetch(`https://api.github.com${path}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/vnd.github+json",
+      "Content-Type": "application/json",
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) {
+    throw new Error(res.status === 401 ? "トークンが無効です" : res.status === 404 ? "Gistが見つかりません" : `エラー (${res.status})`);
+  }
+  return res.json();
+}
+
+$("syncBtn").addEventListener("click", () => {
+  closeSidebar();
+  openSyncModal();
+});
+$("syncCancelBtn").addEventListener("click", closeSyncModal);
+el.syncModal.addEventListener("click", (e) => {
+  if (e.target === el.syncModal) closeSyncModal();
+});
+
+$("syncUploadBtn").addEventListener("click", async () => {
+  const token = el.syncToken.value.trim();
+  let gistId = el.syncGistId.value.trim();
+  if (!token) {
+    setSyncStatus("トークンを入力してください", true);
+    return;
+  }
+  setSyncStatus("アップロード中…");
+  try {
+    const files = { [GIST_FILE]: { content: store.exportJSON() } };
+    let gist;
+    if (gistId) {
+      gist = await gistRequest("PATCH", `/gists/${gistId}`, token, { files });
+    } else {
+      gist = await gistRequest("POST", "/gists", token, {
+        description: "リンク棚(LinkShelf) データ",
+        public: false,
+        files,
+      });
+      gistId = gist.id;
+      el.syncGistId.value = gistId;
+    }
+    saveSyncConfig({ token, gistId, lastSync: Date.now() });
+    setSyncStatus(`アップロード完了（${new Date().toLocaleString("ja-JP")}）`);
+    showToast("クラウドへアップロードしました");
+  } catch (err) {
+    setSyncStatus(`アップロード失敗: ${err.message}`, true);
+  }
+});
+
+$("syncDownloadBtn").addEventListener("click", async () => {
+  const token = el.syncToken.value.trim();
+  const gistId = el.syncGistId.value.trim();
+  if (!token || !gistId) {
+    setSyncStatus("トークンとGist IDを入力してください", true);
+    return;
+  }
+  if (!window.confirm("クラウドのデータでこの端末のデータを置き換えます。よろしいですか？\n（この端末だけの変更は消えます）")) return;
+  setSyncStatus("ダウンロード中…");
+  try {
+    const gist = await gistRequest("GET", `/gists/${gistId}`, token);
+    const file = gist.files && gist.files[GIST_FILE];
+    if (!file || !file.content) throw new Error("データファイルがありません");
+    store.importJSON(file.content, "replace");
+    saveSyncConfig({ token, gistId, lastSync: Date.now() });
+    state.folder = "all";
+    state.tags = [];
+    render();
+    setSyncStatus(`ダウンロード完了（${new Date().toLocaleString("ja-JP")}）`);
+    showToast("クラウドのデータを反映しました");
+  } catch (err) {
+    setSyncStatus(`ダウンロード失敗: ${err.message}`, true);
+  }
+});
+
 /* ---------- mobile sidebar ---------- */
 
 function closeSidebar() {
@@ -691,6 +1074,27 @@ $("menuBtn").addEventListener("click", () => {
 });
 el.sidebarBackdrop.addEventListener("click", closeSidebar);
 
+/* ---------- 共有ターゲット（スマホの共有メニューから追加） ---------- */
+
+function handleShareTarget() {
+  const params = new URLSearchParams(location.search);
+  if (!params.has("url") && !params.has("text") && !params.has("title")) return;
+  const sharedUrl = params.get("url") || "";
+  const text = params.get("text") || "";
+  const title = params.get("title") || "";
+  let url = sharedUrl.trim();
+  if (!/^https?:/i.test(url)) {
+    const m = (text + " " + title).match(/https?:\/\/\S+/);
+    url = m ? m[0] : "";
+  }
+  history.replaceState(null, "", location.pathname);
+  if (!url) return;
+  let prefillTitle = title.trim();
+  if (!prefillTitle) prefillTitle = text.replace(url, "").trim();
+  openLinkModal(null, { url, title: prefillTitle });
+  showToast("共有されたリンクを追加します");
+}
+
 /* ---------- init ---------- */
 
 function render() {
@@ -699,6 +1103,7 @@ function render() {
 }
 
 render();
+handleShareTarget();
 
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
   navigator.serviceWorker.register("sw.js").catch(() => {});
