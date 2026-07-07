@@ -35,6 +35,7 @@ const LinkShelfStore = (() => {
           folderId: folderIds.has(l.folderId) ? l.folderId : null,
           note: typeof l.note === "string" ? l.note : "",
           pinned: !!l.pinned,
+          clicks: typeof l.clicks === "number" ? l.clicks : 0,
           createdAt: typeof l.createdAt === "number" ? l.createdAt : Date.now(),
         }));
     }
@@ -50,9 +51,12 @@ const LinkShelfStore = (() => {
       data = emptyData();
     }
 
+    const listeners = [];
+
     function save() {
       data.updatedAt = Date.now();
       storage.setItem(STORAGE_KEY, JSON.stringify(data));
+      listeners.forEach((fn) => fn());
     }
 
     return {
@@ -84,6 +88,64 @@ const LinkShelfStore = (() => {
         data.links = data.links.filter((l) => l.id !== id);
         save();
         return data.links.length < before;
+      },
+
+      // 削除の取り消し用: id/createdAt/clicks を保ったまま復元
+      restoreLinks(links) {
+        const normalized = normalize({ links, folders: data.folders }).links;
+        let restored = 0;
+        normalized.forEach((l) => {
+          if (data.links.some((x) => x.id === l.id)) return;
+          data.links.unshift(l);
+          restored++;
+        });
+        save();
+        return restored;
+      },
+
+      recordClick(id) {
+        const link = data.links.find((l) => l.id === id);
+        if (!link) return;
+        link.clicks = (link.clicks || 0) + 1;
+        save();
+      },
+
+      renameTag(oldTag, newTag) {
+        oldTag = String(oldTag || "").trim();
+        newTag = String(newTag || "").trim().replace(/,/g, "");
+        if (!oldTag || !newTag) return null;
+        const merged = oldTag !== newTag && data.links.some((l) => l.tags.includes(newTag));
+        let renamed = 0;
+        data.links.forEach((l) => {
+          const i = l.tags.indexOf(oldTag);
+          if (i === -1) return;
+          if (l.tags.includes(newTag)) l.tags.splice(i, 1);
+          else l.tags[i] = newTag;
+          renamed++;
+        });
+        if (renamed) save();
+        return { renamed, merged };
+      },
+
+      deleteTag(tag) {
+        let removed = 0;
+        data.links.forEach((l) => {
+          if (!l.tags.includes(tag)) return;
+          l.tags = l.tags.filter((t) => t !== tag);
+          removed++;
+        });
+        if (removed) save();
+        return removed;
+      },
+
+      duplicateUrls() {
+        const counts = new Map();
+        data.links.forEach((l) => counts.set(l.url, (counts.get(l.url) || 0) + 1));
+        return new Set([...counts].filter(([, c]) => c > 1).map(([u]) => u));
+      },
+
+      subscribe(fn) {
+        listeners.push(fn);
       },
 
       addFolder(name) {
@@ -177,6 +239,7 @@ const LinkShelfStore = (() => {
             folderId,
             note: "",
             pinned: false,
+            clicks: 0,
             createdAt: Date.now(),
           });
           urls.add(url);

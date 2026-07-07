@@ -17,11 +17,14 @@ const state = {
   folder: "all", // "all" | "none" | folderId
   tags: [],
   query: "",
-  sort: uiPrefs.sort || "new", // "new" | "old" | "title"
+  sort: uiPrefs.sort || "new", // "new" | "old" | "title" | "clicks"
+  dup: false, // 重複チェックビュー
 };
 
+let viewMode = uiPrefs.view || "grid"; // "grid" | "list"
+
 function saveUIPrefs() {
-  localStorage.setItem(UI_KEY, JSON.stringify({ sort: state.sort, theme: themeMode }));
+  localStorage.setItem(UI_KEY, JSON.stringify({ sort: state.sort, theme: themeMode, view: viewMode }));
 }
 
 const $ = (id) => document.getElementById(id);
@@ -144,11 +147,38 @@ function makeTagChip(tag, { count, onClick, removable, onRemove, selected } = {}
 }
 
 let toastTimer;
-function showToast(msg) {
+function showToast(msg, action) {
   el.toast.textContent = msg;
+  if (action) {
+    const btn = document.createElement("button");
+    btn.className = "toast-action";
+    btn.textContent = action.label;
+    btn.addEventListener("click", () => {
+      clearTimeout(toastTimer);
+      el.toast.hidden = true;
+      action.onClick();
+    });
+    el.toast.appendChild(btn);
+  }
   el.toast.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => (el.toast.hidden = true), 2600);
+  toastTimer = setTimeout(() => (el.toast.hidden = true), action ? 6000 : 2600);
+}
+
+/* ---------- 削除の取り消し ---------- */
+
+function deleteWithUndo(links, msg) {
+  const snapshot = links.map((l) => ({ ...l }));
+  links.forEach((l) => store.deleteLink(l.id));
+  render();
+  showToast(msg, {
+    label: "元に戻す",
+    onClick: () => {
+      store.restoreLinks(snapshot);
+      render();
+      showToast("削除を取り消しました");
+    },
+  });
 }
 
 /* ---------- sidebar ---------- */
@@ -187,6 +217,7 @@ function folderItem({ id, name, icon, count, showMenu }) {
 
   li.addEventListener("click", () => {
     state.folder = id;
+    state.dup = false;
     closeSidebar();
     render();
   });
@@ -221,16 +252,20 @@ function renderSidebar() {
     el.tagCloud.appendChild(p);
   }
   tagCounts.forEach(({ tag, count }) => {
-    el.tagCloud.appendChild(
-      makeTagChip(tag, {
-        count,
-        selected: state.tags.includes(tag),
-        onClick: () => {
-          state.tags = state.tags.includes(tag) ? state.tags.filter((t) => t !== tag) : [...state.tags, tag];
-          render();
-        },
-      })
-    );
+    const chip = makeTagChip(tag, {
+      count,
+      selected: state.tags.includes(tag),
+      onClick: () => {
+        if (editMode) {
+          openTagEditor(chip, tag);
+          return;
+        }
+        state.tags = state.tags.includes(tag) ? state.tags.filter((t) => t !== tag) : [...state.tags, tag];
+        state.dup = false;
+        render();
+      },
+    });
+    el.tagCloud.appendChild(chip);
   });
 }
 
@@ -241,16 +276,24 @@ function sortLinks(links) {
     new: (a, b) => b.createdAt - a.createdAt,
     old: (a, b) => a.createdAt - b.createdAt,
     title: (a, b) => a.title.localeCompare(b.title, "ja"),
+    clicks: (a, b) => (b.clicks || 0) - (a.clicks || 0) || b.createdAt - a.createdAt,
   }[state.sort] || ((a, b) => b.createdAt - a.createdAt);
   return [...links].sort((a, b) => (b.pinned - a.pinned) || cmp(a, b));
 }
 
 function renderCards() {
   const data = store.getData();
-  const links = sortLinks(store.filterLinks(state));
+  let links = sortLinks(store.filterLinks(state));
+  if (state.dup) {
+    const dups = store.duplicateUrls();
+    links = links.filter((l) => dups.has(l.url));
+    links.sort((a, b) => a.url.localeCompare(b.url));
+  }
   el.cardGrid.textContent = "";
+  el.cardGrid.classList.toggle("list-view", viewMode === "list");
 
   const folderName =
+    state.dup ? "重複リンク" :
     state.folder === "all" ? "すべてのリンク" :
     state.folder === "none" ? "未分類" :
     (data.folders.find((f) => f.id === state.folder) || {}).name || "すべてのリンク";
@@ -305,6 +348,7 @@ function makeCard(link) {
     if (editMode) {
       openLinkModal(link);
     } else {
+      store.recordClick(link.id);
       window.open(link.url, "_blank", "noopener,noreferrer");
     }
   });
@@ -356,6 +400,8 @@ function makeCard(link) {
     if (editMode) {
       e.preventDefault();
       openLinkModal(link);
+    } else {
+      store.recordClick(link.id);
     }
   });
   titles.appendChild(a);
@@ -436,9 +482,7 @@ function makeCard(link) {
   delBtn.addEventListener("click", (e) => {
     e.stopPropagation();
     if (window.confirm(`「${link.title}」を削除しますか？`)) {
-      store.deleteLink(link.id);
-      render();
-      showToast("リンクを削除しました");
+      deleteWithUndo([link], "リンクを削除しました");
     }
   });
   actions.appendChild(delBtn);
@@ -514,10 +558,9 @@ $("bulkMoveBtn").addEventListener("click", (e) => {
 $("bulkDeleteBtn").addEventListener("click", () => {
   const n = selectedIds.size;
   if (!window.confirm(`選択中の${n}件のリンクを削除しますか？`)) return;
-  [...selectedIds].forEach((id) => store.deleteLink(id));
+  const targets = store.getData().links.filter((l) => selectedIds.has(l.id));
   selectedIds.clear();
-  render();
-  showToast(`${n}件削除しました`);
+  deleteWithUndo(targets, `${n}件削除しました`);
 });
 
 $("bulkTagBtn").addEventListener("click", (e) => {
@@ -838,6 +881,7 @@ document.addEventListener("keydown", (e) => {
     closeFolderPicker();
     closeSyncModal();
     el.bulkTagPopover.hidden = true;
+    $("tagEditPopover").hidden = true;
     closeSidebar();
   }
 });
@@ -846,6 +890,7 @@ document.addEventListener("keydown", (e) => {
 
 el.searchInput.addEventListener("input", () => {
   state.query = el.searchInput.value;
+  if (state.query) state.dup = false;
   render();
 });
 
@@ -853,6 +898,111 @@ el.sortSelect.addEventListener("change", () => {
   state.sort = el.sortSelect.value;
   saveUIPrefs();
   render();
+});
+
+/* ---------- 表示切替（カード⇔リスト） ---------- */
+
+const GRID_VIEW_ICON = '<svg viewBox="0 0 24 24" width="18" height="18"><rect x="3" y="3" width="8" height="8" rx="1.5" fill="currentColor"/><rect x="13" y="3" width="8" height="8" rx="1.5" fill="currentColor"/><rect x="3" y="13" width="8" height="8" rx="1.5" fill="currentColor"/><rect x="13" y="13" width="8" height="8" rx="1.5" fill="currentColor"/></svg>';
+const LIST_VIEW_ICON = '<svg viewBox="0 0 24 24" width="18" height="18"><path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>';
+
+function applyView() {
+  el.cardGrid.classList.toggle("list-view", viewMode === "list");
+  const btn = $("viewBtn");
+  btn.innerHTML = viewMode === "list" ? GRID_VIEW_ICON : LIST_VIEW_ICON;
+  btn.title = viewMode === "list" ? "カード表示に切替" : "リスト表示に切替";
+}
+
+$("viewBtn").addEventListener("click", () => {
+  viewMode = viewMode === "grid" ? "list" : "grid";
+  applyView();
+  saveUIPrefs();
+});
+
+applyView();
+
+/* ---------- 重複チェック ---------- */
+
+$("dupBtn").addEventListener("click", () => {
+  closeSidebar();
+  if (!store.duplicateUrls().size) {
+    showToast("重複しているリンクはありません");
+    return;
+  }
+  state.dup = true;
+  state.folder = "all";
+  state.tags = [];
+  state.query = "";
+  el.searchInput.value = "";
+  render();
+  showToast("同じURLのリンクを並べて表示しています");
+});
+
+/* ---------- タグ管理（リネーム・統合・削除） ---------- */
+
+function openTagEditor(anchor, tag) {
+  const p = $("tagEditPopover");
+  p.textContent = "";
+  const wrap = document.createElement("div");
+  wrap.className = "popover-input";
+  const input = document.createElement("input");
+  input.type = "text";
+  input.value = tag;
+  input.placeholder = "新しいタグ名";
+  const commit = () => {
+    const name = input.value.trim().replace(/,/g, "");
+    p.hidden = true;
+    if (!name || name === tag) return;
+    const result = store.renameTag(tag, name);
+    if (!result || !result.renamed) return;
+    state.tags = state.tags.filter((t) => t !== tag);
+    render();
+    showToast(
+      result.merged
+        ? `「${tag}」を「${name}」に統合しました（${result.renamed}件）`
+        : `タグ名を「${name}」に変更しました（${result.renamed}件）`
+    );
+  };
+  input.addEventListener("keydown", (ev) => {
+    ev.stopPropagation();
+    if (ev.key === "Enter") {
+      ev.preventDefault();
+      commit();
+    } else if (ev.key === "Escape") {
+      p.hidden = true;
+    }
+  });
+  wrap.appendChild(input);
+  p.appendChild(wrap);
+
+  const renameBtn = document.createElement("button");
+  renameBtn.type = "button";
+  renameBtn.className = "popover-item";
+  renameBtn.textContent = "名前を変更（既存タグ名なら統合）";
+  renameBtn.addEventListener("click", commit);
+  p.appendChild(renameBtn);
+
+  const delBtn = document.createElement("button");
+  delBtn.type = "button";
+  delBtn.className = "popover-item danger";
+  delBtn.textContent = `タグ「${tag}」を削除`;
+  delBtn.addEventListener("click", () => {
+    if (!window.confirm(`タグ「${tag}」をすべてのリンクから削除しますか？`)) return;
+    const n = store.deleteTag(tag);
+    p.hidden = true;
+    state.tags = state.tags.filter((t) => t !== tag);
+    render();
+    showToast(`${n}件からタグ「${tag}」を削除しました`);
+  });
+  p.appendChild(delBtn);
+
+  positionPopover(p, anchor);
+  input.focus();
+  input.select();
+}
+
+document.addEventListener("click", (e) => {
+  const p = $("tagEditPopover");
+  if (!p.hidden && !p.contains(e.target) && !e.target.closest(".tag-cloud")) p.hidden = true;
 });
 
 /* ---------- export / import ---------- */
@@ -968,6 +1118,7 @@ function openSyncModal() {
   const cfg = syncConfig();
   el.syncToken.value = cfg.token || "";
   el.syncGistId.value = cfg.gistId || "";
+  $("syncAuto").checked = !!cfg.auto;
   setSyncStatus("");
   el.syncModal.hidden = false;
 }
@@ -1028,7 +1179,7 @@ $("syncUploadBtn").addEventListener("click", async () => {
       gistId = gist.id;
       el.syncGistId.value = gistId;
     }
-    saveSyncConfig({ token, gistId, lastSync: Date.now() });
+    saveSyncConfig({ ...syncConfig(), token, gistId, lastSync: Date.now() });
     setSyncStatus(`アップロード完了（${new Date().toLocaleString("ja-JP")}）`);
     showToast("クラウドへアップロードしました");
   } catch (err) {
@@ -1049,17 +1200,91 @@ $("syncDownloadBtn").addEventListener("click", async () => {
     const gist = await gistRequest("GET", `/gists/${gistId}`, token);
     const file = gist.files && gist.files[GIST_FILE];
     if (!file || !file.content) throw new Error("データファイルがありません");
+    applyingRemote = true;
     store.importJSON(file.content, "replace");
-    saveSyncConfig({ token, gistId, lastSync: Date.now() });
+    applyingRemote = false;
+    saveSyncConfig({ ...syncConfig(), token, gistId, lastSync: Date.now() });
     state.folder = "all";
     state.tags = [];
     render();
     setSyncStatus(`ダウンロード完了（${new Date().toLocaleString("ja-JP")}）`);
     showToast("クラウドのデータを反映しました");
   } catch (err) {
+    applyingRemote = false;
     setSyncStatus(`ダウンロード失敗: ${err.message}`, true);
   }
 });
+
+/* ---------- 自動同期 ---------- */
+
+let applyingRemote = false;
+let autoUploadTimer = null;
+
+$("syncAuto").addEventListener("change", () => {
+  const cfg = syncConfig();
+  cfg.auto = $("syncAuto").checked;
+  const token = el.syncToken.value.trim();
+  const gistId = el.syncGistId.value.trim();
+  if (token) cfg.token = token;
+  if (gistId) cfg.gistId = gistId;
+  saveSyncConfig(cfg);
+  showToast(cfg.auto ? "自動同期をオンにしました" : "自動同期をオフにしました");
+});
+
+store.subscribe(() => {
+  if (applyingRemote) return;
+  const cfg = syncConfig();
+  if (!cfg.auto || !cfg.token) return;
+  clearTimeout(autoUploadTimer);
+  autoUploadTimer = setTimeout(autoUpload, 3000);
+});
+
+async function autoUpload() {
+  const cfg = syncConfig();
+  if (!cfg.auto || !cfg.token) return;
+  try {
+    const files = { [GIST_FILE]: { content: store.exportJSON() } };
+    if (cfg.gistId) {
+      await gistRequest("PATCH", `/gists/${cfg.gistId}`, cfg.token, { files });
+    } else {
+      const gist = await gistRequest("POST", "/gists", cfg.token, {
+        description: "リンク棚(LinkShelf) データ",
+        public: false,
+        files,
+      });
+      cfg.gistId = gist.id;
+    }
+    cfg.lastSync = Date.now();
+    saveSyncConfig(cfg);
+    showToast("クラウドへ自動アップロードしました");
+  } catch {
+    showToast("自動アップロードに失敗しました（同期画面から再試行できます）");
+  }
+}
+
+async function autoSyncStartup() {
+  const cfg = syncConfig();
+  if (!cfg.auto || !cfg.token || !cfg.gistId) return;
+  try {
+    const gist = await gistRequest("GET", `/gists/${cfg.gistId}`, cfg.token);
+    const file = gist.files && gist.files[GIST_FILE];
+    if (!file || !file.content) return;
+    const remote = JSON.parse(file.content);
+    if ((remote.updatedAt || 0) <= (store.getData().updatedAt || 0)) return;
+    if (!window.confirm("クラウドに新しいデータがあります。この端末に取り込みますか？\n（この端末だけの変更は上書きされます）")) return;
+    applyingRemote = true;
+    store.importJSON(file.content, "replace");
+    applyingRemote = false;
+    saveSyncConfig({ ...cfg, lastSync: Date.now() });
+    state.folder = "all";
+    state.tags = [];
+    render();
+    showToast("クラウドの最新データを取り込みました");
+  } catch {
+    applyingRemote = false;
+    // オフライン時などは静かにスキップ
+  }
+}
 
 /* ---------- mobile sidebar ---------- */
 
@@ -1104,6 +1329,7 @@ function render() {
 
 render();
 handleShareTarget();
+autoSyncStartup();
 
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
   navigator.serviceWorker.register("sw.js").catch(() => {});

@@ -860,3 +860,46 @@ body {
   .main { padding: 16px 14px 60px; }
   .card-grid { grid-template-columns: 1fr; }
 }
+
+/* ---------- リスト表示 ---------- */
+.icon-btn.view-btn { display: block; color: var(--text-sub); margin-left: 2px; }
+.icon-btn.view-btn:hover { color: var(--text); }
+
+.card-grid.list-view { grid-template-columns: 1fr; gap: 8px; }
+.list-view .card { flex-direction: row; align-items: center; gap: 12px; padding: 10px 14px; }
+.list-view .card:hover { transform: none; }
+.list-view .card-head { flex: 1; min-width: 0; align-items: center; }
+.list-view .card-title { -webkit-line-clamp: 1; }
+.list-view .card-note { display: none; }
+.list-view .card-tags { margin: 0; flex-shrink: 0; max-width: 38%; overflow: hidden; }
+.list-view .card-actions { position: static; margin-left: auto; flex-shrink: 0; }
+.edit-mode .list-view .card-head { padding-right: 0; }
+
+/* ---------- トーストのアクション（元に戻す） ---------- */
+.toast-action {
+  margin-left: 12px;
+  background: none;
+  border: none;
+  color: inherit;
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+  font-family: inherit;
+  text-decoration: underline;
+  padding: 0;
+}
+
+/* ---------- タグ編集ポップオーバー ---------- */
+.popover-item.danger { color: var(--danger); }
+
+/* ---------- 自動同期チェックボックス ---------- */
+.checkbox-field {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 12.5px;
+  color: var(--text-sub);
+  margin: 10px 0;
+  cursor: pointer;
+}
+.checkbox-field input { margin-top: 2px; accent-color: var(--accent); }

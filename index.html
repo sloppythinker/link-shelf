@@ -54,6 +54,7 @@
         <button class="side-tool" id="exportBtn">エクスポート</button>
         <button class="side-tool" id="importBtn">インポート</button>
         <button class="side-tool" id="syncBtn">同期</button>
+        <button class="side-tool" id="dupBtn">重複チェック</button>
         <input type="file" id="importFile" accept="application/json,.json,text/html,.html,.htm" hidden>
       </div>
     </aside>
@@ -67,7 +68,9 @@
           <option value="new">新しい順</option>
           <option value="old">古い順</option>
           <option value="title">タイトル順</option>
+          <option value="clicks">よく使う順</option>
         </select>
+        <button class="icon-btn view-btn" id="viewBtn" aria-label="表示切替" title="表示切替"></button>
       </div>
       <div class="card-grid" id="cardGrid"></div>
       <div class="empty-state" id="emptyState" hidden>
@@ -152,6 +155,10 @@
         <span class="field-label">Gist ID（初回アップロードで自動発行。他の端末にはこのIDとトークンを入力）</span>
         <input type="text" id="syncGistId" placeholder="（未設定）" autocomplete="off">
       </label>
+      <label class="checkbox-field">
+        <input type="checkbox" id="syncAuto">
+        <span>自動同期（起動時にクラウドの新しいデータを確認し、変更時は自動アップロード）</span>
+      </label>
       <p class="sync-status" id="syncStatus"></p>
       <div class="modal-actions">
         <button type="button" class="btn ghost" id="syncCancelBtn">閉じる</button>
@@ -172,6 +179,7 @@
 
   <div class="popover" id="folderPicker" hidden></div>
   <div class="popover" id="bulkTagPopover" hidden></div>
+  <div class="popover" id="tagEditPopover" hidden></div>
 
   <div class="toast" id="toast" hidden></div>
 
