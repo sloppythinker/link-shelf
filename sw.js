@@ -1,4 +1,4 @@
-const CACHE_NAME = "linkshelf-v3";
+const CACHE_NAME = "linkshelf-v4";
 const SHELL = [
   "./",
   "./index.html",

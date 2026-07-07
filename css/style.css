@@ -340,6 +340,7 @@ body {
   gap: 10px;
   position: relative;
   transition: transform .12s, box-shadow .12s;
+  cursor: pointer;
 }
 
 .card:hover {
@@ -434,7 +435,20 @@ body {
   gap: 4px;
 }
 
-.card:hover .card-actions { display: flex; }
+@media (hover: hover) {
+  .card:hover .card-actions { display: flex; }
+}
+
+/* 編集モード */
+.edit-mode .card-actions { display: flex; }
+.edit-mode .card-head { padding-right: 92px; }
+.edit-mode .card { border-color: #c7c7ee; }
+
+#editModeBtn.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent);
+}
 
 .card-actions button {
   background: #fff;
@@ -716,5 +730,4 @@ body {
 
   .main { padding: 16px 14px 60px; }
   .card-grid { grid-template-columns: 1fr; }
-  .card-actions { display: flex; }
 }

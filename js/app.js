@@ -232,6 +232,16 @@ function makeCard(link) {
   const card = document.createElement("article");
   card.className = "card";
 
+  // 白枠内のどこをタップしてもリンクを開く（タグ・ボタン・リンク文字は除く）
+  card.addEventListener("click", (e) => {
+    if (e.target.closest("a, button, .tag-chip")) return;
+    if (editMode) {
+      openLinkModal(link);
+    } else {
+      window.open(link.url, "_blank", "noopener,noreferrer");
+    }
+  });
+
   const head = document.createElement("div");
   head.className = "card-head";
 
@@ -257,6 +267,12 @@ function makeCard(link) {
   a.target = "_blank";
   a.rel = "noopener noreferrer";
   a.textContent = link.title;
+  a.addEventListener("click", (e) => {
+    if (editMode) {
+      e.preventDefault();
+      openLinkModal(link);
+    }
+  });
   titles.appendChild(a);
   const dom = document.createElement("div");
   dom.className = "card-domain";
@@ -331,6 +347,19 @@ function faviconFallback(domain) {
   div.textContent = (domain.replace(/^www\./, "")[0] || "?").toUpperCase();
   return div;
 }
+
+/* ---------- 編集モード ---------- */
+
+let editMode = false;
+
+$("editModeBtn").addEventListener("click", () => {
+  editMode = !editMode;
+  document.body.classList.toggle("edit-mode", editMode);
+  const btn = $("editModeBtn");
+  btn.textContent = editMode ? "完了" : "編集";
+  btn.classList.toggle("active", editMode);
+  if (editMode) showToast("編集モード: カードをタップで編集、ボタンで移動・削除");
+});
 
 /* ---------- folder picker (カードから後からフォルダ分け) ---------- */
 
