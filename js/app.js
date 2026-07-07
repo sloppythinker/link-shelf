@@ -27,6 +27,8 @@ const el = {
   fieldUrl: $("fieldUrl"),
   fieldTitle: $("fieldTitle"),
   fieldFolder: $("fieldFolder"),
+  fieldNewFolder: $("fieldNewFolder"),
+  folderPicker: $("folderPicker"),
   fieldTagText: $("fieldTagText"),
   chipInput: $("chipInput"),
   tagSuggest: $("tagSuggest"),
@@ -214,7 +216,7 @@ function renderCards() {
     el.emptyState.hidden = false;
     if (data.links.length === 0) {
       el.emptyTitle.textContent = "まだリンクがありません";
-      el.emptyDesc.innerHTML = "「リンク追加」ボタンから、よく使うサイトを登録しましょう。<br>タグ（イラスト・素材集・tips など）とフォルダで整理できます。";
+      el.emptyDesc.innerHTML = "まずは「リンク追加」ボタンからサイトを登録しましょう。<br>フォルダ分けは後から、カードのフォルダボタンでできます。";
     } else {
       el.emptyTitle.textContent = "一致するリンクがありません";
       el.emptyDesc.textContent = "検索条件やタグの絞り込みを変えてみてください。";
@@ -291,6 +293,14 @@ function makeCard(link) {
 
   const actions = document.createElement("div");
   actions.className = "card-actions";
+  const moveBtn = document.createElement("button");
+  moveBtn.title = "フォルダへ移動";
+  moveBtn.innerHTML = '<svg viewBox="0 0 24 24" width="13" height="13"><path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>';
+  moveBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    openFolderPicker(link, moveBtn);
+  });
+  actions.appendChild(moveBtn);
   const editBtn = document.createElement("button");
   editBtn.title = "編集";
   editBtn.innerHTML = '<svg viewBox="0 0 24 24" width="13" height="13"><path d="M4 20h4L20 8l-4-4L4 16v4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>';
@@ -322,6 +332,77 @@ function faviconFallback(domain) {
   return div;
 }
 
+/* ---------- folder picker (カードから後からフォルダ分け) ---------- */
+
+function openFolderPicker(link, anchorBtn) {
+  const p = el.folderPicker;
+  p.textContent = "";
+
+  const moveTo = (folderId, label) => {
+    store.updateLink(link.id, { folderId });
+    closeFolderPicker();
+    render();
+    showToast(folderId ? `「${label}」へ移動しました` : "未分類に移動しました");
+  };
+
+  const addItem = (label, folderId) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "popover-item" + (link.folderId === folderId ? " current" : "");
+    btn.textContent = label;
+    btn.addEventListener("click", () => moveTo(folderId, label));
+    p.appendChild(btn);
+  };
+
+  addItem("未分類", null);
+  store.getData().folders.forEach((f) => addItem(f.name, f.id));
+
+  const newBtn = document.createElement("button");
+  newBtn.type = "button";
+  newBtn.className = "popover-item new";
+  newBtn.textContent = "＋ 新規フォルダを作って移動";
+  newBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const wrap = document.createElement("div");
+    wrap.className = "popover-input";
+    const input = document.createElement("input");
+    input.type = "text";
+    input.placeholder = "フォルダ名を入力してEnter";
+    input.addEventListener("keydown", (ev) => {
+      ev.stopPropagation();
+      if (ev.key === "Enter") {
+        ev.preventDefault();
+        const name = input.value.trim();
+        if (!name) return;
+        const folder = store.addFolder(name) || store.getData().folders.find((f) => f.name === name);
+        moveTo(folder.id, folder.name);
+      } else if (ev.key === "Escape") {
+        closeFolderPicker();
+      }
+    });
+    wrap.appendChild(input);
+    p.replaceChild(wrap, newBtn);
+    input.focus();
+  });
+  p.appendChild(newBtn);
+
+  p.hidden = false;
+  const r = anchorBtn.getBoundingClientRect();
+  const left = Math.max(8, Math.min(r.left, window.innerWidth - p.offsetWidth - 8));
+  let top = r.bottom + 6;
+  if (top + p.offsetHeight > window.innerHeight - 8) top = Math.max(8, r.top - p.offsetHeight - 6);
+  p.style.left = `${left}px`;
+  p.style.top = `${top}px`;
+}
+
+function closeFolderPicker() {
+  el.folderPicker.hidden = true;
+}
+
+document.addEventListener("click", (e) => {
+  if (!el.folderPicker.hidden && !el.folderPicker.contains(e.target)) closeFolderPicker();
+});
+
 /* ---------- link modal ---------- */
 
 let editingId = null;
@@ -346,10 +427,16 @@ function openLinkModal(link) {
     opt.textContent = f.name;
     el.fieldFolder.appendChild(opt);
   });
+  const optNew = document.createElement("option");
+  optNew.value = "__new__";
+  optNew.textContent = "＋ 新しいフォルダを作成…";
+  el.fieldFolder.appendChild(optNew);
   el.fieldFolder.value = link && link.folderId ? link.folderId : "";
   if (!link && state.folder !== "all" && state.folder !== "none") {
     el.fieldFolder.value = state.folder;
   }
+  el.fieldNewFolder.hidden = true;
+  el.fieldNewFolder.value = "";
 
   el.fieldTagText.value = "";
   renderChips();
@@ -410,14 +497,30 @@ el.fieldTagText.addEventListener("keydown", (e) => {
 el.fieldTagText.addEventListener("input", renderTagSuggest);
 el.chipInput.addEventListener("click", () => el.fieldTagText.focus());
 
+el.fieldFolder.addEventListener("change", () => {
+  const isNew = el.fieldFolder.value === "__new__";
+  el.fieldNewFolder.hidden = !isNew;
+  if (isNew) el.fieldNewFolder.focus();
+});
+
 el.linkForm.addEventListener("submit", (e) => {
   e.preventDefault();
   addEditTag(el.fieldTagText.value); // 未確定の入力も拾う
+  let folderId = el.fieldFolder.value || null;
+  if (folderId === "__new__") {
+    const name = el.fieldNewFolder.value.trim();
+    if (name) {
+      const folder = store.addFolder(name) || store.getData().folders.find((f) => f.name === name);
+      folderId = folder.id;
+    } else {
+      folderId = null;
+    }
+  }
   const payload = {
     url: el.fieldUrl.value.trim(),
     title: el.fieldTitle.value.trim(),
     tags: editTags,
-    folderId: el.fieldFolder.value || null,
+    folderId,
     note: el.fieldNote.value.trim(),
   };
   if (!payload.url) return;
@@ -492,6 +595,7 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
     closeLinkModal();
     closeFolderModal();
+    closeFolderPicker();
     closeSidebar();
   }
 });

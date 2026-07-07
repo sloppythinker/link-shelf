@@ -68,7 +68,7 @@
           <rect x="44" y="20" width="8" height="24" rx="3" fill="#fff" transform="rotate(8 48 32)"/>
         </svg>
         <p class="empty-title" id="emptyTitle">まだリンクがありません</p>
-        <p class="empty-desc" id="emptyDesc">「リンク追加」ボタンから、よく使うサイトを登録しましょう。<br>タグ（イラスト・素材集・tips など）とフォルダで整理できます。</p>
+        <p class="empty-desc" id="emptyDesc">まずは「リンク追加」ボタンからサイトを登録しましょう。<br>フォルダ分けは後から、カードのフォルダボタンでできます。</p>
       </div>
     </main>
   </div>
@@ -87,8 +87,9 @@
           <input type="text" id="fieldTitle" placeholder="未入力の場合はURLを表示">
         </label>
         <label class="field">
-          <span class="field-label">フォルダ</span>
+          <span class="field-label">フォルダ（後からでも変更できます）</span>
           <select id="fieldFolder"></select>
+          <input type="text" id="fieldNewFolder" placeholder="新しいフォルダ名を入力" hidden style="margin-top:6px;">
         </label>
         <div class="field">
           <span class="field-label">タグ</span>
@@ -127,6 +128,8 @@
       </form>
     </div>
   </div>
+
+  <div class="popover" id="folderPicker" hidden></div>
 
   <div class="toast" id="toast" hidden></div>
 

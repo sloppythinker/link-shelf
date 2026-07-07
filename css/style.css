@@ -14,6 +14,8 @@
 
 * { box-sizing: border-box; }
 
+[hidden] { display: none !important; }
+
 html, body {
   margin: 0;
   height: 100%;
@@ -594,6 +596,59 @@ body {
   justify-content: flex-end;
   gap: 10px;
   margin-top: 20px;
+}
+
+/* ---------- Popover (フォルダ移動) ---------- */
+.popover {
+  position: fixed;
+  z-index: 70;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 30px rgba(20, 20, 40, .18);
+  padding: 6px;
+  min-width: 190px;
+  max-width: 260px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.popover-item {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  text-align: left;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--text);
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.popover-item:hover { background: var(--bg); }
+.popover-item.current { color: var(--accent); font-weight: 700; }
+.popover-item.new { color: var(--text-sub); }
+
+.popover-input { padding: 4px; }
+
+.popover-input input {
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+}
+
+.popover-input input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 /* ---------- Toast ---------- */
