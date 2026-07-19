@@ -227,14 +227,20 @@ function folderItem({ id, name, icon, count, showMenu }) {
 const FOLDER_ICON = '<svg viewBox="0 0 24 24" width="15" height="15"><path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6z" fill="currentColor" opacity=".8"/></svg>';
 const ALL_ICON = '<svg viewBox="0 0 24 24" width="15" height="15"><rect x="3" y="3" width="8" height="8" rx="2" fill="currentColor" opacity=".8"/><rect x="13" y="3" width="8" height="8" rx="2" fill="currentColor" opacity=".5"/><rect x="3" y="13" width="8" height="8" rx="2" fill="currentColor" opacity=".5"/><rect x="13" y="13" width="8" height="8" rx="2" fill="currentColor" opacity=".8"/></svg>';
 const INBOX_ICON = '<svg viewBox="0 0 24 24" width="15" height="15"><path d="M4 4h16v10h-5a3 3 0 0 1-6 0H4V4zm0 10v6h16v-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>';
+const LOOSE_ICON = '<svg viewBox="0 0 24 24" width="15" height="15"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="3.5 3.5"/></svg>';
+const ARCHIVE_ICON = '<svg viewBox="0 0 24 24" width="15" height="15"><path d="M3 5h18v4H3zM5 9v10h14V9M10 13h4" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>';
 const PIN_SVG = '<svg viewBox="0 0 24 24" width="12" height="12"><path d="M9 4h6l-1 6 3 3v2h-4v5l-1 1-1-1v-5H7v-2l3-3L9 4z" fill="currentColor"/></svg>';
 
 function renderSidebar() {
   const data = store.getData();
   const counts = store.folderCounts();
+  const active = data.links.filter((l) => !l.archived);
+  const inboxCount = active.filter((l) => l.folderId === null && !l.tags.length).length;
+  const archivedCount = data.links.length - active.length;
   el.folderList.textContent = "";
-  el.folderList.appendChild(folderItem({ id: "all", name: "すべて", icon: ALL_ICON, count: data.links.length }));
+  el.folderList.appendChild(folderItem({ id: "all", name: "すべて", icon: ALL_ICON, count: active.length }));
   el.folderList.appendChild(folderItem({ id: "none", name: "未分類", icon: INBOX_ICON, count: counts.get("none") || 0 }));
+  el.folderList.appendChild(folderItem({ id: "inbox", name: "未整理", icon: LOOSE_ICON, count: inboxCount }));
   [...data.folders]
     .sort((a, b) => a.order - b.order)
     .forEach((f) => {
@@ -242,6 +248,7 @@ function renderSidebar() {
         folderItem({ id: f.id, name: f.name, icon: FOLDER_ICON, count: counts.get(f.id) || 0, showMenu: true })
       );
     });
+  el.folderList.appendChild(folderItem({ id: "archived", name: "アーカイブ", icon: ARCHIVE_ICON, count: archivedCount }));
 
   el.tagCloud.textContent = "";
   const tagCounts = store.tagCounts();
@@ -296,6 +303,8 @@ function renderCards() {
     state.dup ? "重複リンク" :
     state.folder === "all" ? "すべてのリンク" :
     state.folder === "none" ? "未分類" :
+    state.folder === "inbox" ? "未整理" :
+    state.folder === "archived" ? "アーカイブ" :
     (data.folders.find((f) => f.id === state.folder) || {}).name || "すべてのリンク";
   el.currentView.textContent = folderName;
   el.countBadge.textContent = `${links.length}件`;
@@ -326,6 +335,12 @@ function renderCards() {
     if (data.links.length === 0) {
       el.emptyTitle.textContent = "まだリンクがありません";
       el.emptyDesc.innerHTML = "まずは「リンク追加」ボタンからサイトを登録しましょう。<br>フォルダ分けは後から、カードのフォルダボタンでできます。";
+    } else if (state.folder === "archived" && !state.query && !state.tags.length) {
+      el.emptyTitle.textContent = "アーカイブは空です";
+      el.emptyDesc.textContent = "カードの箱アイコンで、使い終わったリンクを棚から下げられます。";
+    } else if (state.folder === "inbox" && !state.query && !state.tags.length) {
+      el.emptyTitle.textContent = "未整理のリンクはありません";
+      el.emptyDesc.textContent = "フォルダもタグも付いていないリンクがここに表示されます。";
     } else {
       el.emptyTitle.textContent = "一致するリンクがありません";
       el.emptyDesc.textContent = "検索条件やタグの絞り込みを変えてみてください。";
@@ -453,6 +468,24 @@ function makeCard(link) {
   });
   actions.appendChild(pinBtn);
 
+  const archBtn = document.createElement("button");
+  archBtn.title = link.archived ? "アーカイブから戻す" : "アーカイブ（棚から下げる）";
+  archBtn.innerHTML = ARCHIVE_ICON.replace('width="15" height="15"', 'width="13" height="13"');
+  archBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const wasArchived = link.archived;
+    store.updateLink(link.id, { archived: !wasArchived });
+    render();
+    showToast(wasArchived ? "アーカイブから戻しました" : "アーカイブしました", {
+      label: "元に戻す",
+      onClick: () => {
+        store.updateLink(link.id, { archived: wasArchived });
+        render();
+      },
+    });
+  });
+  actions.appendChild(archBtn);
+
   const moveBtn = document.createElement("button");
   moveBtn.title = "フォルダへ移動";
   moveBtn.innerHTML = FOLDER_ICON.replace('fill="currentColor" opacity=".8"', 'fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"');
@@ -536,8 +569,20 @@ function toggleSelect(id, card, box) {
 function updateBulkBar() {
   const show = editMode && selectedIds.size > 0;
   el.bulkBar.hidden = !show;
-  if (show) el.bulkCount.textContent = `${selectedIds.size}件選択`;
+  if (show) {
+    el.bulkCount.textContent = `${selectedIds.size}件選択`;
+    $("bulkArchiveBtn").textContent = state.folder === "archived" ? "戻す" : "アーカイブ";
+  }
 }
+
+$("bulkArchiveBtn").addEventListener("click", () => {
+  const toArchive = state.folder !== "archived";
+  const n = selectedIds.size;
+  [...selectedIds].forEach((id) => store.updateLink(id, { archived: toArchive }));
+  selectedIds.clear();
+  render();
+  showToast(toArchive ? `${n}件をアーカイブしました` : `${n}件をアーカイブから戻しました`);
+});
 
 $("bulkClearBtn").addEventListener("click", () => {
   selectedIds.clear();
@@ -715,7 +760,7 @@ function openLinkModal(link, prefill) {
   optNew.textContent = "＋ 新しいフォルダを作成…";
   el.fieldFolder.appendChild(optNew);
   el.fieldFolder.value = link && link.folderId ? link.folderId : "";
-  if (!link && state.folder !== "all" && state.folder !== "none") {
+  if (!link && store.getData().folders.some((f) => f.id === state.folder)) {
     el.fieldFolder.value = state.folder;
   }
   el.fieldNewFolder.hidden = true;
@@ -749,11 +794,11 @@ function renderChips() {
 }
 
 function renderTagSuggest() {
-  const input = el.fieldTagText.value.trim().toLowerCase();
+  const input = LinkShelfStore.normText(el.fieldTagText.value.trim());
   el.tagSuggest.textContent = "";
   store
     .tagCounts()
-    .filter(({ tag }) => !editTags.includes(tag) && (!input || tag.toLowerCase().includes(input)))
+    .filter(({ tag }) => !editTags.includes(tag) && (!input || LinkShelfStore.normText(tag).includes(input)))
     .slice(0, 12)
     .forEach(({ tag }) => {
       el.tagSuggest.appendChild(makeTagChip(tag, { onClick: () => addEditTag(tag) }));
@@ -880,9 +925,31 @@ document.addEventListener("keydown", (e) => {
     closeFolderModal();
     closeFolderPicker();
     closeSyncModal();
+    closeBmkModal();
     el.bulkTagPopover.hidden = true;
     $("tagEditPopover").hidden = true;
     closeSidebar();
+  }
+});
+
+/* ---------- キーボードショートカット（/ = 検索、n = リンク追加） ---------- */
+
+function anyOverlayOpen() {
+  return !el.linkModal.hidden || !el.folderModal.hidden || !el.syncModal.hidden || !$("bmkModal").hidden;
+}
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" || e.metaKey || e.ctrlKey || e.altKey) return;
+  const t = e.target;
+  if (t && (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName))) return;
+  if (anyOverlayOpen()) return;
+  if (e.key === "/") {
+    e.preventDefault();
+    el.searchInput.focus();
+    el.searchInput.select();
+  } else if (e.key === "n") {
+    e.preventDefault();
+    openLinkModal(null);
   }
 });
 
@@ -892,6 +959,17 @@ el.searchInput.addEventListener("input", () => {
   state.query = el.searchInput.value;
   if (state.query) state.dup = false;
   render();
+});
+
+el.searchInput.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    if (el.searchInput.value) {
+      el.searchInput.value = "";
+      state.query = "";
+      render();
+    }
+    el.searchInput.blur();
+  }
 });
 
 el.sortSelect.addEventListener("change", () => {
@@ -1194,21 +1272,18 @@ $("syncDownloadBtn").addEventListener("click", async () => {
     setSyncStatus("トークンとGist IDを入力してください", true);
     return;
   }
-  if (!window.confirm("クラウドのデータでこの端末のデータを置き換えます。よろしいですか？\n（この端末だけの変更は消えます）")) return;
   setSyncStatus("ダウンロード中…");
   try {
     const gist = await gistRequest("GET", `/gists/${gistId}`, token);
     const file = gist.files && gist.files[GIST_FILE];
     if (!file || !file.content) throw new Error("データファイルがありません");
     applyingRemote = true;
-    store.importJSON(file.content, "replace");
+    const result = store.mergeRemote(file.content);
     applyingRemote = false;
     saveSyncConfig({ ...syncConfig(), token, gistId, lastSync: Date.now() });
-    state.folder = "all";
-    state.tags = [];
     render();
-    setSyncStatus(`ダウンロード完了（${new Date().toLocaleString("ja-JP")}）`);
-    showToast("クラウドのデータを反映しました");
+    setSyncStatus(`統合完了: 追加${result.added}・更新${result.updated}・削除${result.removed}（${new Date().toLocaleString("ja-JP")}）`);
+    showToast(result.changed ? "クラウドのデータを統合しました" : "すでに最新の状態です");
   } catch (err) {
     applyingRemote = false;
     setSyncStatus(`ダウンロード失敗: ${err.message}`, true);
@@ -1271,17 +1346,15 @@ async function autoSyncStartup() {
     if (!file || !file.content) return;
     const remote = JSON.parse(file.content);
     if ((remote.updatedAt || 0) <= (store.getData().updatedAt || 0)) return;
-    if (!window.confirm("クラウドに新しいデータがあります。この端末に取り込みますか？\n（この端末だけの変更は上書きされます）")) return;
-    applyingRemote = true;
-    store.importJSON(file.content, "replace");
-    applyingRemote = false;
+    // マージ方式なのでこの端末だけの変更は消えない。マージで変更が出れば
+    // subscribe 経由の自動アップロードが統合結果をクラウドへ書き戻す
+    const result = store.mergeRemote(file.content);
     saveSyncConfig({ ...cfg, lastSync: Date.now() });
-    state.folder = "all";
-    state.tags = [];
     render();
-    showToast("クラウドの最新データを取り込みました");
+    if (result.changed) {
+      showToast(`クラウドの変更を統合しました（追加${result.added}・更新${result.updated}・削除${result.removed}）`);
+    }
   } catch {
-    applyingRemote = false;
     // オフライン時などは静かにスキップ
   }
 }
@@ -1319,6 +1392,108 @@ function handleShareTarget() {
   openLinkModal(null, { url, title: prefillTitle });
   showToast("共有されたリンクを追加します");
 }
+
+/* ---------- ブックマークレット（PCのブラウザから1クリック追加） ---------- */
+
+function bmkCode() {
+  const base = location.origin + location.pathname.replace(/index\.html$/, "");
+  return (
+    "javascript:(function(){window.open('" +
+    base +
+    "?url='+encodeURIComponent(location.href)+'&title='+encodeURIComponent(document.title),'_blank');})();"
+  );
+}
+
+function openBmkModal() {
+  $("bmkLink").setAttribute("href", bmkCode());
+  $("bmkModal").hidden = false;
+}
+
+function closeBmkModal() {
+  $("bmkModal").hidden = true;
+}
+
+$("bmkBtn").addEventListener("click", () => {
+  closeSidebar();
+  openBmkModal();
+});
+$("bmkCloseBtn").addEventListener("click", closeBmkModal);
+$("bmkModal").addEventListener("click", (e) => {
+  if (e.target === $("bmkModal")) closeBmkModal();
+});
+$("bmkLink").addEventListener("click", (e) => e.preventDefault()); // アプリ内では実行させない（ドラッグ登録用）
+$("bmkCopyBtn").addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(bmkCode());
+    showToast("ブックマークレットのコードをコピーしました");
+  } catch {
+    showToast("コピーできませんでした。ボタンをブックマークバーへ直接ドラッグしてください");
+  }
+});
+
+/* ---------- ドラッグ＆ドロップでリンク追加 ---------- */
+
+let dragDepth = 0;
+
+function dragHasLink(e) {
+  const types = e.dataTransfer && e.dataTransfer.types;
+  if (!types) return false;
+  const list = [...types];
+  if (list.includes("Files")) return false; // ファイルはインポートボタンから
+  return list.includes("text/uri-list") || list.includes("text/plain");
+}
+
+document.addEventListener("dragenter", (e) => {
+  dragDepth++;
+  if (!dragHasLink(e)) return;
+  e.preventDefault();
+  $("dropOverlay").hidden = false;
+});
+
+document.addEventListener("dragover", (e) => {
+  if (!dragHasLink(e)) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = "copy";
+});
+
+document.addEventListener("dragleave", () => {
+  if (dragDepth > 0) dragDepth--;
+  if (!dragDepth) $("dropOverlay").hidden = true;
+});
+
+document.addEventListener("drop", (e) => {
+  dragDepth = 0;
+  $("dropOverlay").hidden = true;
+  if (!dragHasLink(e)) return;
+  e.preventDefault();
+  const dt = e.dataTransfer;
+  const uri = (dt.getData("text/uri-list") || "").split(/\r?\n/).find((l) => l && !l.startsWith("#"));
+  const text = dt.getData("text/plain") || "";
+  const url = uri || (text.match(/https?:\/\/\S+/) || [])[0] || "";
+  if (!/^https?:/i.test(url)) {
+    showToast("ドロップからURLが見つかりませんでした");
+    return;
+  }
+  let title = "";
+  const html = dt.getData("text/html");
+  if (html) {
+    const link = new DOMParser().parseFromString(html, "text/html").querySelector("a");
+    if (link) title = (link.textContent || "").trim();
+  }
+  const plain = text.trim();
+  if (!title && plain && plain !== url && !/^https?:\/\/\S+$/i.test(plain)) title = plain;
+  openLinkModal(null, { url, title });
+  showToast("ドロップしたリンクを追加します");
+});
+
+/* ---------- 他タブ・PWAウィンドウとの同期 ---------- */
+
+window.addEventListener("storage", (e) => {
+  if (e.key !== LinkShelfStore.STORAGE_KEY) return;
+  // 別タブが保存した内容を読み直す。listeners は呼ばれないので自動アップロードは走らない
+  store.refresh();
+  render();
+});
 
 /* ---------- init ---------- */
 

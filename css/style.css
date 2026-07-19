@@ -903,3 +903,50 @@ body {
   cursor: pointer;
 }
 .checkbox-field input { margin-top: 2px; accent-color: var(--accent); }
+
+/* ---------- ドラッグ＆ドロップ ---------- */
+
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: rgba(91, 91, 214, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.drop-box {
+  padding: 26px 40px;
+  border: 3px dashed var(--accent);
+  border-radius: var(--radius);
+  background: var(--card-bg);
+  color: var(--accent);
+  font-size: 16px;
+  font-weight: 700;
+  box-shadow: var(--shadow);
+}
+
+/* ---------- ブックマークレット ---------- */
+
+.bmk-drag-area {
+  text-align: center;
+  margin: 18px 0;
+}
+
+.bmk-link {
+  display: inline-block;
+  padding: 10px 22px;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 10px;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: grab;
+  box-shadow: var(--shadow);
+}
+
+.bmk-link:active {
+  cursor: grabbing;
+}

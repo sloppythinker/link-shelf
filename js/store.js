@@ -1,12 +1,36 @@
 const LinkShelfStore = (() => {
   const STORAGE_KEY = "linkshelf-data";
+  const TOMBSTONE_TTL = 180 * 24 * 60 * 60 * 1000; // 削除記録は180日で掃除
 
   function uid() {
     return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
   }
 
+  // 検索・照合用の正規化: NFKC + 小文字化 + カタカナ→ひらがな
+  function normText(s) {
+    return String(s)
+      .normalize("NFKC")
+      .toLowerCase()
+      .replace(/[ァ-ヶ]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0x60));
+  }
+
   function emptyData() {
-    return { version: 1, folders: [], links: [] };
+    return { version: 2, folders: [], links: [], tombstones: { links: {}, folders: {} } };
+  }
+
+  // tombstones: { links: { linkId: 削除時刻 }, folders: { フォルダ名: 削除時刻 } }
+  function normalizeTombstones(raw) {
+    const out = { links: {}, folders: {} };
+    if (!raw || typeof raw !== "object") return out;
+    const cutoff = Date.now() - TOMBSTONE_TTL;
+    ["links", "folders"].forEach((kind) => {
+      const src = raw[kind];
+      if (!src || typeof src !== "object") return;
+      Object.entries(src).forEach(([key, at]) => {
+        if (typeof at === "number" && at > cutoff) out[kind][key] = at;
+      });
+    });
+    return out;
   }
 
   function normalize(raw) {
@@ -25,31 +49,42 @@ const LinkShelfStore = (() => {
     if (Array.isArray(raw.links)) {
       data.links = raw.links
         .filter((l) => l && typeof l.url === "string" && l.url)
-        .map((l) => ({
-          id: String(l.id || uid()),
-          url: l.url,
-          title: typeof l.title === "string" && l.title ? l.title : l.url,
-          tags: Array.isArray(l.tags)
-            ? [...new Set(l.tags.filter((t) => typeof t === "string" && t.trim()).map((t) => t.trim()))]
-            : [],
-          folderId: folderIds.has(l.folderId) ? l.folderId : null,
-          note: typeof l.note === "string" ? l.note : "",
-          pinned: !!l.pinned,
-          clicks: typeof l.clicks === "number" ? l.clicks : 0,
-          createdAt: typeof l.createdAt === "number" ? l.createdAt : Date.now(),
-        }));
+        .map((l) => {
+          const createdAt = typeof l.createdAt === "number" ? l.createdAt : Date.now();
+          return {
+            id: String(l.id || uid()),
+            url: l.url,
+            title: typeof l.title === "string" && l.title ? l.title : l.url,
+            tags: Array.isArray(l.tags)
+              ? [...new Set(l.tags.filter((t) => typeof t === "string" && t.trim()).map((t) => t.trim()))]
+              : [],
+            folderId: folderIds.has(l.folderId) ? l.folderId : null,
+            note: typeof l.note === "string" ? l.note : "",
+            pinned: !!l.pinned,
+            archived: !!l.archived,
+            clicks: typeof l.clicks === "number" ? l.clicks : 0,
+            createdAt,
+            updatedAt: typeof l.updatedAt === "number" ? l.updatedAt : createdAt,
+          };
+        });
     }
+    data.tombstones = normalizeTombstones(raw.tombstones);
     if (typeof raw.updatedAt === "number") data.updatedAt = raw.updatedAt;
     return data;
   }
 
   function createStore(storage) {
     let data;
-    try {
-      data = normalize(JSON.parse(storage.getItem(STORAGE_KEY)));
-    } catch {
-      data = emptyData();
+
+    function load() {
+      try {
+        return normalize(JSON.parse(storage.getItem(STORAGE_KEY)));
+      } catch {
+        return emptyData();
+      }
     }
+
+    data = load();
 
     const listeners = [];
 
@@ -62,6 +97,11 @@ const LinkShelfStore = (() => {
     return {
       getData() {
         return data;
+      },
+
+      // 他タブが書いた localStorage を読み直す（storage イベント用。listeners には通知しない）
+      refresh() {
+        data = load();
       },
 
       addLink({ url, title, tags = [], folderId = null, note = "" }) {
@@ -78,7 +118,7 @@ const LinkShelfStore = (() => {
         const merged = { ...link, ...patch, id: link.id, createdAt: link.createdAt };
         const normalized = normalize({ links: [merged], folders: data.folders }).links[0];
         if (!normalized) return null;
-        Object.assign(link, normalized, { id: link.id, createdAt: link.createdAt });
+        Object.assign(link, normalized, { id: link.id, createdAt: link.createdAt, updatedAt: Date.now() });
         save();
         return link;
       },
@@ -86,8 +126,10 @@ const LinkShelfStore = (() => {
       deleteLink(id) {
         const before = data.links.length;
         data.links = data.links.filter((l) => l.id !== id);
+        if (data.links.length === before) return false;
+        data.tombstones.links[id] = Date.now();
         save();
-        return data.links.length < before;
+        return true;
       },
 
       // 削除の取り消し用: id/createdAt/clicks を保ったまま復元
@@ -96,6 +138,8 @@ const LinkShelfStore = (() => {
         let restored = 0;
         normalized.forEach((l) => {
           if (data.links.some((x) => x.id === l.id)) return;
+          l.updatedAt = Date.now(); // 復元は削除記録より新しい編集として扱う
+          delete data.tombstones.links[l.id];
           data.links.unshift(l);
           restored++;
         });
@@ -121,6 +165,7 @@ const LinkShelfStore = (() => {
           if (i === -1) return;
           if (l.tags.includes(newTag)) l.tags.splice(i, 1);
           else l.tags[i] = newTag;
+          l.updatedAt = Date.now();
           renamed++;
         });
         if (renamed) save();
@@ -132,6 +177,7 @@ const LinkShelfStore = (() => {
         data.links.forEach((l) => {
           if (!l.tags.includes(tag)) return;
           l.tags = l.tags.filter((t) => t !== tag);
+          l.updatedAt = Date.now();
           removed++;
         });
         if (removed) save();
@@ -153,6 +199,7 @@ const LinkShelfStore = (() => {
         if (!name) return null;
         if (data.folders.some((f) => f.name === name)) return null;
         const folder = { id: uid(), name, order: data.folders.length };
+        delete data.tombstones.folders[name];
         data.folders.push(folder);
         save();
         return folder;
@@ -169,9 +216,10 @@ const LinkShelfStore = (() => {
       },
 
       deleteFolder(id) {
-        const before = data.folders.length;
+        const folder = data.folders.find((f) => f.id === id);
+        if (!folder) return false;
+        data.tombstones.folders[folder.name] = Date.now();
         data.folders = data.folders.filter((f) => f.id !== id);
-        if (data.folders.length === before) return false;
         data.links.forEach((l) => {
           if (l.folderId === id) l.folderId = null;
         });
@@ -179,15 +227,23 @@ const LinkShelfStore = (() => {
         return true;
       },
 
-      // folder: "all" | "none" | folderId
+      // folder: "all" | "none" | "inbox"(フォルダ・タグなし) | "archived" | folderId
+      // アーカイブ済みは "archived" ビュー以外に出さない
       filterLinks({ folder = "all", tags = [], query = "" } = {}) {
-        const q = query.trim().toLowerCase();
+        const q = normText(query.trim());
+        const special = folder === "all" || folder === "none" || folder === "inbox" || folder === "archived";
         return data.links.filter((l) => {
+          if (folder === "archived") {
+            if (!l.archived) return false;
+          } else if (l.archived) {
+            return false;
+          }
           if (folder === "none" && l.folderId !== null) return false;
-          if (folder !== "all" && folder !== "none" && l.folderId !== folder) return false;
+          if (folder === "inbox" && (l.folderId !== null || l.tags.length)) return false;
+          if (!special && l.folderId !== folder) return false;
           if (tags.length && !tags.every((t) => l.tags.includes(t))) return false;
           if (q) {
-            const haystack = [l.title, l.url, l.note, ...l.tags].join("\n").toLowerCase();
+            const haystack = normText([l.title, l.url, l.note, ...l.tags].join("\n"));
             if (!haystack.includes(q)) return false;
           }
           return true;
@@ -196,7 +252,10 @@ const LinkShelfStore = (() => {
 
       tagCounts() {
         const counts = new Map();
-        data.links.forEach((l) => l.tags.forEach((t) => counts.set(t, (counts.get(t) || 0) + 1)));
+        data.links.forEach((l) => {
+          if (l.archived) return;
+          l.tags.forEach((t) => counts.set(t, (counts.get(t) || 0) + 1));
+        });
         return [...counts.entries()]
           .map(([tag, count]) => ({ tag, count }))
           .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag, "ja"));
@@ -205,6 +264,7 @@ const LinkShelfStore = (() => {
       folderCounts() {
         const counts = new Map();
         data.links.forEach((l) => {
+          if (l.archived) return;
           const key = l.folderId === null ? "none" : l.folderId;
           counts.set(key, (counts.get(key) || 0) + 1);
         });
@@ -231,6 +291,7 @@ const LinkShelfStore = (() => {
             }
             folderId = f.id;
           }
+          const now = Date.now();
           data.links.push({
             id: uid(),
             url,
@@ -239,8 +300,10 @@ const LinkShelfStore = (() => {
             folderId,
             note: "",
             pinned: false,
+            archived: false,
             clicks: 0,
-            createdAt: Date.now(),
+            createdAt: now,
+            updatedAt: now,
           });
           urls.add(url);
           added++;
@@ -278,10 +341,120 @@ const LinkShelfStore = (() => {
         save();
         return data;
       },
+
+      // Gist同期用のマージ取り込み。リンクごとの updatedAt が新しい方を採用し、
+      // 削除はトゥームストーンで伝播する。変更がなければ save しない。
+      // 戻り値: { added, updated, removed, changed }
+      mergeRemote(json) {
+        const remote = normalize(typeof json === "string" ? JSON.parse(json) : json);
+        let added = 0;
+        let updated = 0;
+        let removed = 0;
+        let changed = false;
+
+        // フォルダは名前でマージ
+        const idMap = new Map(); // remoteのfolderId → ローカルのfolderId
+        remote.folders.forEach((rf) => {
+          const lf = data.folders.find((f) => f.name === rf.name);
+          if (lf) {
+            idMap.set(rf.id, lf.id);
+            return;
+          }
+          const tomb = data.tombstones.folders[rf.name];
+          if (tomb) {
+            // ローカルで削除済みのフォルダは、削除後に更新されたリンクが残る場合のみ復活
+            const alive = remote.links.some((l) => l.folderId === rf.id && l.updatedAt > tomb);
+            if (!alive) {
+              idMap.set(rf.id, null);
+              return;
+            }
+            delete data.tombstones.folders[rf.name];
+          }
+          const nf = { id: uid(), name: rf.name, order: data.folders.length };
+          data.folders.push(nf);
+          idMap.set(rf.id, nf.id);
+          changed = true;
+        });
+
+        const byId = new Map(data.links.map((l) => [l.id, l]));
+        const byUrl = new Map(data.links.map((l) => [l.url, l]));
+        remote.links.forEach((rl) => {
+          const tomb = data.tombstones.links[rl.id];
+          if (tomb && tomb >= rl.updatedAt) return; // ローカルで削除済み
+          const mappedFolder = rl.folderId === null ? null : idMap.get(rl.folderId) ?? null;
+          const target = byId.get(rl.id) || byUrl.get(rl.url);
+          if (target) {
+            if (rl.updatedAt > target.updatedAt) {
+              Object.assign(target, {
+                url: rl.url,
+                title: rl.title,
+                tags: [...rl.tags],
+                note: rl.note,
+                pinned: rl.pinned,
+                archived: rl.archived,
+                folderId: mappedFolder,
+                updatedAt: rl.updatedAt,
+              });
+              updated++;
+              changed = true;
+            }
+            if (rl.clicks > target.clicks) {
+              target.clicks = rl.clicks;
+              changed = true;
+            }
+          } else {
+            const nl = { ...rl, tags: [...rl.tags], folderId: mappedFolder };
+            data.links.push(nl);
+            byId.set(nl.id, nl);
+            byUrl.set(nl.url, nl);
+            if (tomb) delete data.tombstones.links[rl.id];
+            added++;
+            changed = true;
+          }
+        });
+
+        // リモートの削除記録を反映（ローカル側がその後に編集していれば残す）
+        Object.entries(remote.tombstones.links).forEach(([id, at]) => {
+          const l = byId.get(id);
+          if (!l) {
+            if ((data.tombstones.links[id] || 0) < at) {
+              data.tombstones.links[id] = at;
+              changed = true;
+            }
+            return;
+          }
+          if (l.updatedAt <= at) {
+            data.links = data.links.filter((x) => x.id !== id);
+            byId.delete(id);
+            data.tombstones.links[id] = Math.max(at, data.tombstones.links[id] || 0);
+            removed++;
+            changed = true;
+          }
+        });
+        Object.entries(remote.tombstones.folders).forEach(([name, at]) => {
+          const f = data.folders.find((x) => x.name === name);
+          if (f) {
+            const alive = data.links.some((l) => l.folderId === f.id && l.updatedAt > at);
+            if (alive) return;
+            data.folders = data.folders.filter((x) => x.id !== f.id);
+            data.links.forEach((l) => {
+              if (l.folderId === f.id) l.folderId = null;
+            });
+            data.tombstones.folders[name] = Math.max(at, data.tombstones.folders[name] || 0);
+            changed = true;
+          } else if ((data.tombstones.folders[name] || 0) < at) {
+            data.tombstones.folders[name] = at;
+            changed = true;
+          }
+        });
+
+        if (changed) save();
+        return { added, updated, removed, changed };
+      },
     };
   }
 
-  return { createStore, normalize, STORAGE_KEY };
+  return { createStore, normalize, normText, STORAGE_KEY };
 })();
 
 if (typeof module !== "undefined" && module.exports) {

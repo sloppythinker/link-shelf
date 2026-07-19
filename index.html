@@ -26,7 +26,7 @@
     </a>
     <div class="search-wrap">
       <svg class="search-icon" viewBox="0 0 24 24" width="16" height="16"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="m20 20-3.5-3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-      <input type="search" id="searchInput" placeholder="タイトル・URL・タグ・メモを検索" autocomplete="off">
+      <input type="search" id="searchInput" placeholder="タイトル・URL・タグ・メモを検索" autocomplete="off" title="ショートカット: /">
     </div>
     <button class="btn primary add-btn" id="addLinkBtn">
       <svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
@@ -55,6 +55,7 @@
         <button class="side-tool" id="importBtn">インポート</button>
         <button class="side-tool" id="syncBtn">同期</button>
         <button class="side-tool" id="dupBtn">重複チェック</button>
+        <button class="side-tool" id="bmkBtn">ブックマークレット</button>
         <input type="file" id="importFile" accept="application/json,.json,text/html,.html,.htm" hidden>
       </div>
     </aside>
@@ -157,7 +158,7 @@
       </label>
       <label class="checkbox-field">
         <input type="checkbox" id="syncAuto">
-        <span>自動同期（起動時にクラウドの新しいデータを確認し、変更時は自動アップロード）</span>
+        <span>自動同期（起動時にクラウドの変更をマージで取り込み、変更時は自動アップロード。端末ごとの変更は消えません）</span>
       </label>
       <p class="sync-status" id="syncStatus"></p>
       <div class="modal-actions">
@@ -168,13 +169,33 @@
     </div>
   </div>
 
+  <!-- ブックマークレット案内モーダル -->
+  <div class="modal-backdrop" id="bmkModal" hidden>
+    <div class="modal" role="dialog" aria-modal="true">
+      <h2 class="modal-title">ブックマークレット</h2>
+      <p class="sync-note">下のボタンをブラウザのブックマークバーへドラッグ＆ドロップして登録します。見ているページでそのブックマークを押すと、URLとタイトル入りでリンク棚が開きます。</p>
+      <p class="bmk-drag-area"><a id="bmkLink" class="bmk-link" href="#">📥 リンク棚に追加</a></p>
+      <p class="sync-note">ドラッグできない場合は「コードをコピー」を押し、ブックマークを手動作成してURL欄に貼り付けてください。</p>
+      <div class="modal-actions">
+        <button type="button" class="btn ghost" id="bmkCopyBtn">コードをコピー</button>
+        <button type="button" class="btn primary" id="bmkCloseBtn">閉じる</button>
+      </div>
+    </div>
+  </div>
+
   <!-- 一括操作バー（編集モードで選択中に表示） -->
   <div class="bulk-bar" id="bulkBar" hidden>
     <span class="bulk-count" id="bulkCount">0件選択</span>
     <button class="btn ghost" id="bulkMoveBtn">フォルダへ移動</button>
     <button class="btn ghost" id="bulkTagBtn">タグ追加</button>
+    <button class="btn ghost" id="bulkArchiveBtn">アーカイブ</button>
     <button class="btn danger" id="bulkDeleteBtn">削除</button>
     <button class="btn ghost" id="bulkClearBtn">解除</button>
+  </div>
+
+  <!-- ドラッグ＆ドロップ受け付けオーバーレイ -->
+  <div class="drop-overlay" id="dropOverlay" hidden>
+    <div class="drop-box">ここにドロップしてリンクを追加</div>
   </div>
 
   <div class="popover" id="folderPicker" hidden></div>
