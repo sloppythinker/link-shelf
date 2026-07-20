@@ -357,6 +357,16 @@ function makeCard(link) {
   card.className = "card";
   if (selectedIds.has(link.id)) card.classList.add("selected");
 
+  // キーボード対応: Tabで到達、Enter/Spaceでクリックと同じ動作
+  card.tabIndex = 0;
+  card.setAttribute("role", "link");
+  card.setAttribute("aria-label", link.title || link.url);
+  card.addEventListener("keydown", (e) => {
+    if (e.target !== card || (e.key !== "Enter" && e.key !== " ")) return;
+    e.preventDefault();
+    card.click();
+  });
+
   // 白枠内のどこをタップしてもリンクを開く（タグ・ボタン・リンク文字は除く）
   card.addEventListener("click", (e) => {
     if (e.target.closest("a, button, .tag-chip, .select-box")) return;
@@ -514,9 +524,7 @@ function makeCard(link) {
   delBtn.innerHTML = '<svg viewBox="0 0 24 24" width="13" height="13"><path d="M5 7h14M9 7V5h6v2m-8 0 1 13h8l1-13" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>';
   delBtn.addEventListener("click", (e) => {
     e.stopPropagation();
-    if (window.confirm(`「${link.title}」を削除しますか？`)) {
-      deleteWithUndo([link], "リンクを削除しました");
-    }
+    deleteWithUndo([link], "リンクを削除しました");
   });
   actions.appendChild(delBtn);
 
@@ -602,7 +610,6 @@ $("bulkMoveBtn").addEventListener("click", (e) => {
 
 $("bulkDeleteBtn").addEventListener("click", () => {
   const n = selectedIds.size;
-  if (!window.confirm(`選択中の${n}件のリンクを削除しますか？`)) return;
   const targets = store.getData().links.filter((l) => selectedIds.has(l.id));
   selectedIds.clear();
   deleteWithUndo(targets, `${n}件削除しました`);
@@ -854,10 +861,8 @@ el.linkForm.addEventListener("submit", (e) => {
   if (!payload.url) return;
   if (editingId) {
     store.updateLink(editingId, payload);
-    showToast("リンクを更新しました");
   } else {
     store.addLink(payload);
-    showToast("リンクを追加しました");
   }
   closeLinkModal();
   render();
@@ -910,7 +915,6 @@ el.folderForm.addEventListener("submit", (e) => {
   }
   closeFolderModal();
   render();
-  showToast(editingFolderId ? "フォルダ名を変更しました" : "フォルダを作成しました");
 });
 
 $("addFolderBtn").addEventListener("click", () => openFolderModal(null));
@@ -1165,19 +1169,44 @@ $("importFile").addEventListener("change", async (e) => {
     showToast("JSONファイルを読み込めませんでした");
     return;
   }
-  const merge = window.confirm("インポート方法を選んでください。\n\nOK = 追記（既存のリンクに追加）\nキャンセル = 置き換え（既存データを消して読み込む）");
-  if (!merge && !window.confirm("既存のデータをすべて置き換えます。本当によろしいですか？")) {
-    return;
-  }
+  pendingImportText = text;
+  importModalEl.hidden = false;
+});
+
+/* ---------- インポート方法選択モーダル ---------- */
+
+const importModalEl = $("importModal");
+let pendingImportText = null;
+
+function closeImportModal() {
+  importModalEl.hidden = true;
+  pendingImportText = null;
+}
+
+function runImport(mode) {
+  const text = pendingImportText;
+  closeImportModal();
+  if (text == null) return;
   try {
-    store.importJSON(text, merge ? "merge" : "replace");
+    store.importJSON(text, mode);
     state.folder = "all";
     state.tags = [];
     render();
-    showToast("インポートしました");
+    showToast(mode === "merge" ? "追記でインポートしました" : "置き換えでインポートしました");
   } catch {
     showToast("インポートに失敗しました");
   }
+}
+
+$("importMergeBtn").addEventListener("click", () => runImport("merge"));
+$("importReplaceBtn").addEventListener("click", () => {
+  const n = store.getData().links.length;
+  if (!window.confirm(`既存のリンク${n}件をすべて削除して置き換えます。よろしいですか？`)) return;
+  runImport("replace");
+});
+$("importCancelBtn").addEventListener("click", closeImportModal);
+importModalEl.addEventListener("click", (e) => {
+  if (e.target === importModalEl) closeImportModal();
 });
 
 /* ---------- Gist同期 ---------- */

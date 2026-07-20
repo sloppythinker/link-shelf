@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#5b5bd6">
   <title>リンク棚 - LinkShelf</title>
   <link rel="stylesheet" href="css/style.css">
@@ -174,7 +174,7 @@
     <div class="modal" role="dialog" aria-modal="true">
       <h2 class="modal-title">ブックマークレット</h2>
       <p class="sync-note">下のボタンをブラウザのブックマークバーへドラッグ＆ドロップして登録します。見ているページでそのブックマークを押すと、URLとタイトル入りでリンク棚が開きます。</p>
-      <p class="bmk-drag-area"><a id="bmkLink" class="bmk-link" href="#">📥 リンク棚に追加</a></p>
+      <p class="bmk-drag-area"><a id="bmkLink" class="bmk-link" href="#"><svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" style="vertical-align:-2px;margin-right:6px"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 21h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>リンク棚に追加</a></p>
       <p class="sync-note">ドラッグできない場合は「コードをコピー」を押し、ブックマークを手動作成してURL欄に貼り付けてください。</p>
       <div class="modal-actions">
         <button type="button" class="btn ghost" id="bmkCopyBtn">コードをコピー</button>
@@ -196,6 +196,19 @@
   <!-- ドラッグ＆ドロップ受け付けオーバーレイ -->
   <div class="drop-overlay" id="dropOverlay" hidden>
     <div class="drop-box">ここにドロップしてリンクを追加</div>
+  </div>
+
+  <!-- インポート方法選択モーダル -->
+  <div class="modal-backdrop" id="importModal" hidden>
+    <div class="modal small" role="dialog" aria-modal="true">
+      <h2 class="modal-title">インポート方法を選択</h2>
+      <p class="sync-note">読み込んだJSONを既存のリンクにどう反映しますか？</p>
+      <div class="modal-actions column">
+        <button type="button" class="btn primary" id="importMergeBtn">追記（既存のリンクに追加）</button>
+        <button type="button" class="btn danger" id="importReplaceBtn">置き換え（既存データを削除して読み込む）</button>
+        <button type="button" class="btn ghost" id="importCancelBtn">キャンセル</button>
+      </div>
+    </div>
   </div>
 
   <div class="popover" id="folderPicker" hidden></div>
