@@ -1,4 +1,7 @@
-const store = LinkShelfStore.createStore(localStorage);
+const store = LinkShelfStore.createStore(localStorage, (error) => { render(); showToast(error.message); });
+window.addEventListener("error", (event) => {
+  if (event.error?.name === "StorageWriteError") event.preventDefault();
+});
 
 const UI_KEY = "linkshelf-ui";
 const SYNC_KEY = "linkshelf-sync";
@@ -1185,10 +1188,13 @@ function closeImportModal() {
 
 function runImport(mode) {
   const text = pendingImportText;
-  closeImportModal();
   if (text == null) return;
   try {
+    const preview = store.previewImport(text, mode);
+    const action = mode === "merge" ? `新規${preview.added}件を追加` : `現在の${preview.before}件を置き換え`;
+    if (!window.confirm(`${action}します。取り込み後: リンク${preview.after}件・フォルダ${preview.folders}件。実行しますか？`)) return;
     store.importJSON(text, mode);
+    closeImportModal();
     state.folder = "all";
     state.tags = [];
     render();
@@ -1200,8 +1206,6 @@ function runImport(mode) {
 
 $("importMergeBtn").addEventListener("click", () => runImport("merge"));
 $("importReplaceBtn").addEventListener("click", () => {
-  const n = store.getData().links.length;
-  if (!window.confirm(`既存のリンク${n}件をすべて削除して置き換えます。よろしいですか？`)) return;
   runImport("replace");
 });
 $("importCancelBtn").addEventListener("click", closeImportModal);

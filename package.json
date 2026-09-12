@@ -3,7 +3,7 @@
   "private": true,
   "description": "リンク棚 (LinkShelf) のテスト用パッケージ。アプリ本体はビルド不要の静的サイト",
   "scripts": {
-    "test": "node tests/store.test.js && node tests/dom.test.js"
+    "test": "node tests/store.test.js && node tests/dom.test.js && node --test tests/save-failure.test.cjs"
   },
   "devDependencies": {
     "jsdom": "^24.1.0"

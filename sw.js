@@ -1,4 +1,4 @@
-const CACHE_NAME = "linkshelf-v8";
+const CACHE_NAME = "linkshelf-v10";
 const SHELL = [
   "./",
   "./index.html",
@@ -21,7 +21,7 @@ self.addEventListener("activate", (e) => {
   e.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(keys.filter((k) => k.startsWith("linkshelf-") && k !== CACHE_NAME).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });

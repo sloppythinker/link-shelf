@@ -357,5 +357,40 @@ test("refresh が localStorage の最新内容を読み直す", () => {
   assert.strictEqual(store.getData().links.length, 2);
 });
 
+test("同じ名前へのタグ変更ではタグと保存内容を保持する", () => {
+  const { store, storage } = newStore();
+  store.addLink({ url: "https://a.example", tags: ["仕事"] });
+  const before = storage.getItem(LinkShelfStore.STORAGE_KEY);
+  assert.deepStrictEqual(store.renameTag("仕事", " 仕事 "), { renamed: 0, merged: false });
+  assert.strictEqual(storage.getItem(LinkShelfStore.STORAGE_KEY), before);
+  assert.deepStrictEqual(store.getData().links[0].tags, ["仕事"]);
+});
+
+test("マージするバックアップ内でもURLとフォルダ名の重複をまとめる", () => {
+  const { store } = newStore();
+  store.importJSON({
+    folders: [{ id: "f1", name: "資料" }, { id: "f2", name: "資料" }],
+    links: [
+      { url: "https://a.example", folderId: "f1" },
+      { url: "https://a.example", folderId: "f2" },
+      { url: "https://b.example", folderId: "f2" },
+    ],
+  }, "merge");
+  assert.strictEqual(store.getData().folders.length, 1);
+  assert.strictEqual(store.getData().links.length, 2);
+  assert.ok(store.getData().links.every((l) => l.folderId === store.getData().folders[0].id));
+});
+
+test("別形式のバックアップを拒否して既存リンクを保持する", () => {
+  const { store, storage } = newStore();
+  store.addLink({ url: "https://keep.example" });
+  const before = storage.getItem(LinkShelfStore.STORAGE_KEY);
+  for (const raw of [null, {}, [], { links: [null] }, { links: [], folders: {} }]) {
+    assert.throws(() => store.importJSON(JSON.stringify(raw), "replace"), /バックアップ形式/);
+    assert.strictEqual(storage.getItem(LinkShelfStore.STORAGE_KEY), before);
+    assert.strictEqual(store.getData().links[0].url, "https://keep.example");
+  }
+});
+
 console.log(`store.test.js: ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
