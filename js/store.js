@@ -73,7 +73,7 @@ const LinkShelfStore = (() => {
     return data;
   }
 
-  function createStore(storage) {
+  function createStore(storage, onSaveError = () => {}) {
     let data;
 
     function load() {
@@ -85,12 +85,23 @@ const LinkShelfStore = (() => {
     }
 
     data = load();
+    let committed = JSON.stringify(data);
 
     const listeners = [];
 
     function save() {
       data.updatedAt = Date.now();
-      storage.setItem(STORAGE_KEY, JSON.stringify(data));
+      try {
+        const next = JSON.stringify(data);
+        storage.setItem(STORAGE_KEY, next);
+        committed = next;
+      } catch (cause) {
+        data = JSON.parse(committed);
+        const error = new Error("保存できませんでした。空き容量・ブラウザの保存設定を確認してください", { cause });
+        error.name = "StorageWriteError";
+        onSaveError(error);
+        throw error;
+      }
       listeners.forEach((fn) => fn());
     }
 
@@ -102,6 +113,19 @@ const LinkShelfStore = (() => {
       // 他タブが書いた localStorage を読み直す（storage イベント用。listeners には通知しない）
       refresh() {
         data = load();
+        committed = JSON.stringify(data);
+      },
+
+      previewImport(json, mode = "replace") {
+        const sandbox = createStore({ getItem: () => JSON.stringify(data), setItem() {} });
+        const after = sandbox.importJSON(json, mode);
+        const urls = new Set(data.links.map((l) => l.url));
+        return {
+          before: data.links.length,
+          after: after.links.length,
+          added: after.links.filter((l) => !urls.has(l.url)).length,
+          folders: after.folders.length,
+        };
       },
 
       addLink({ url, title, tags = [], folderId = null, note = "" }) {
@@ -158,6 +182,7 @@ const LinkShelfStore = (() => {
         oldTag = String(oldTag || "").trim();
         newTag = String(newTag || "").trim().replace(/,/g, "");
         if (!oldTag || !newTag) return null;
+        if (oldTag === newTag) return { renamed: 0, merged: false };
         const merged = oldTag !== newTag && data.links.some((l) => l.tags.includes(newTag));
         let renamed = 0;
         data.links.forEach((l) => {
@@ -317,7 +342,14 @@ const LinkShelfStore = (() => {
       },
 
       importJSON(json, mode = "replace") {
-        const incoming = normalize(typeof json === "string" ? JSON.parse(json) : json);
+        const raw = typeof json === "string" ? JSON.parse(json) : json;
+        if (!raw || !Array.isArray(raw.links) ||
+            raw.links.some((l) => !l || typeof l.url !== "string" || !l.url.trim()) ||
+            (raw.folders !== undefined && (!Array.isArray(raw.folders) ||
+              raw.folders.some((f) => !f || typeof f.name !== "string")))) {
+          throw new Error("リンク棚のバックアップ形式ではありません");
+        }
+        const incoming = normalize(raw);
         if (mode === "replace") {
           data = incoming;
         } else {
@@ -329,6 +361,7 @@ const LinkShelfStore = (() => {
             } else {
               const nf = { id: uid(), name: f.name, order: data.folders.length };
               data.folders.push(nf);
+              nameToId.set(f.name, nf.id);
               idMap.set(f.id, nf.id);
             }
           });
@@ -336,6 +369,7 @@ const LinkShelfStore = (() => {
           incoming.links.forEach((l) => {
             if (existingUrls.has(l.url)) return;
             data.links.push({ ...l, id: uid(), folderId: idMap.get(l.folderId) ?? null });
+            existingUrls.add(l.url);
           });
         }
         save();
